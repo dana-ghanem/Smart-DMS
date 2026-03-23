@@ -19,13 +19,13 @@ class Document extends Model
         'category_id',
     ];
 
-    // Relationship with User
+    // Relation with User
     public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-    // Relationship with Category
+    // Relation with Category
     public function category()
     {
         return $this->belongsTo(Category::class);
