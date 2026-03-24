@@ -4,15 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Category;
 
 class Document extends Model
 {
     use HasFactory;
-
+    protected $primaryKey = 'document_id';
     protected $fillable = [
         'user_id',
         'title',
-        'author',
+        'author_name',
         'description',
         'file_path',
         'category_id',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Document;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -12,7 +13,9 @@ class DocumentController extends Controller
     // Show list of user's documents
     public function index()
     {
-        $documents = Auth::user()->documents()->latest()->get();
+        /** @var User $user */
+        $user = Auth::user();
+        $documents = $user->documents()->latest()->get();
         return view('documents.index', compact('documents'));
     }
 
@@ -27,19 +30,21 @@ class DocumentController extends Controller
     {
         $validated = $request->validate([
             'title'       => 'required|string|max:255',
-            'author'      => 'nullable|string|max:255',
+            'author_name' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'required|integer',
-            'file'        => 'required|file|mimes:pdf,doc,docx,txt|max:2048', // adjust as needed
+            'file'        => 'required|file|mimes:pdf,doc,docx,txt|max:2048',
         ]);
 
         // Store the file
         $path = $request->file('file')->store('documents', 'public');
 
         // Create the document record
-        Auth::user()->documents()->create([
+        /** @var User $user */
+        $user = Auth::user();
+        $user->documents()->create([
             'title'       => $validated['title'],
-            'author'      => $validated['author'],
+            'author_name' => $validated['author_name'],
             'description' => $validated['description'],
             'category_id' => $validated['category_id'],
             'file_path'   => $path,
