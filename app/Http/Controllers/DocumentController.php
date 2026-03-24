@@ -29,7 +29,7 @@ class DocumentController extends Controller
             'title'       => 'required|string|max:255',
             'author'      => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'category'    => 'nullable|string|max:100',
+            'category_id' => 'required|integer',
             'file'        => 'required|file|mimes:pdf,doc,docx,txt|max:2048', // adjust as needed
         ]);
 
@@ -41,7 +41,7 @@ class DocumentController extends Controller
             'title'       => $validated['title'],
             'author'      => $validated['author'],
             'description' => $validated['description'],
-            'category'    => $validated['category'],
+            'category_id' => $validated['category_id'],
             'file_path'   => $path,
         ]);
 
