@@ -26,7 +26,7 @@
             </div>
             <div class="mb-3">
                 <label>Author</label>
-                <input type="text" name="author" class="form-control">
+                <input type="text" name="author_name" class="form-control">
             </div>
             <div class="mb-3">
                 <label>Description</label>
@@ -34,7 +34,8 @@
             </div>
             <div class="mb-3">
                 <label>Category</label>
-                <input type="text" name="category" class="form-control">
+                <input type="text" name="category" class="form-control" value="{{ old('category') }}" required>
+                <small class="form-text text-muted">Type a category name (e.g. "network"). It will be created if missing.</small>
             </div>
             <div class="mb-3">
                 <label>File</label>

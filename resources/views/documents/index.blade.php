@@ -39,8 +39,8 @@
                     @foreach($documents as $doc)
                         <tr>
                             <td>{{ $doc->title }}</td>
-                            <td>{{ $doc->author ?? '-' }}</td>
-                            <td>{{ $doc->category ?? '-' }}</td>
+                            <td>{{ $doc->author_name ?? '-' }}</td>
+                            <td>{{ $doc->category->name ?? '-' }}</td>
                             <td>{{ Str::limit($doc->description, 50) }}</td>
                             <td>{{ $doc->created_at->format('Y-m-d') }}</td>
                             <td><a href="{{ Storage::url($doc->file_path) }}" target="_blank">View</a></td>
