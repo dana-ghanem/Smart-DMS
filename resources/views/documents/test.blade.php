@@ -5,12 +5,12 @@
 </head>
 <body>
     <h1>Test Page</h1>
-    
+
     @if(isset($documents) && $documents->count() > 0)
         @foreach($documents as $doc)
             <div>
                 <strong>{{ $doc->title }}</strong><br>
-                <a href="{{ route('documents.show', $doc->id) }}">View Document</a>
+                <a href="{{ route('documents.show', $doc->document_id) }}">View Document</a>
                 <hr>
             </div>
         @endforeach

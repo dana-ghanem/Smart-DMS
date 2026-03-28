@@ -33,6 +33,7 @@
                         <th>Description</th>
                         <th>Uploaded</th>
                         <th>File</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -44,6 +45,15 @@
                             <td><?php echo e(Str::limit($doc->description, 50)); ?></td>
                             <td><?php echo e($doc->created_at->format('Y-m-d')); ?></td>
                             <td><a href="<?php echo e(Storage::url($doc->file_path)); ?>" target="_blank">View</a></td>
+                            <td>
+                                <a href="<?php echo e(route('documents.show', $doc->document_id)); ?>" class="btn btn-sm btn-info">View</a>
+                                <a href="<?php echo e(route('documents.edit', $doc->document_id)); ?>" class="btn btn-sm btn-warning">Edit</a>
+                                <form method="POST" action="<?php echo e(route('documents.destroy', $doc->document_id)); ?>" class="d-inline" onsubmit="return confirm('Are you sure?')">
+                                    <?php echo csrf_field(); ?>
+                                    <?php echo method_field('DELETE'); ?>
+                                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                </form>
+                            </td>
                         </tr>
                     <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                 </tbody>

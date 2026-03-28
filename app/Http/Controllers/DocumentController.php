@@ -26,6 +26,20 @@ class DocumentController extends Controller
         return view('documents.upload');
     }
 
+    // Show document details
+    public function show(Document $document)
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Ensure the document belongs to the user
+        if ($document->user_id !== $user->user_id) {
+            abort(403);
+        }
+
+        return view('documents.show', compact('document'));
+    }
+
     // Store uploaded document
     public function store(Request $request)
     {
@@ -52,38 +66,37 @@ class DocumentController extends Controller
             'description' => $validated['description'] ?? null,
             'category_id' => $category->category_id,
             'file_path'   => $path,
-        // 3️⃣ Save record in database
-        Document::create([
-            'title' => $request->title,
-            'author' => $request->author,
-            'description' => $request->description,
-            'file_path' => $filePath,
-            'user_id' => 1,
-            'category_id' => $request->category_id,
         ]);
 
         return redirect()->route('documents.index')->with('success', 'Document uploaded successfully.');
     }
 
     // — Show edit form
-    public function edit($id)
+    public function edit(Document $document)
     {
         /** @var User $user */
         $user = Auth::user();
 
-        $document = $user->documents()->findOrFail($id);
+        // Ensure the document belongs to the user
+        if ($document->user_id !== $user->user_id) {
+            abort(403);
+        }
+
         $categories = Category::all();
 
         return view('documents.edit', compact('document', 'categories'));
     }
 
     // — Save edited document
-    public function update(Request $request, $id)
+    public function update(Request $request, Document $document)
     {
         /** @var User $user */
         $user = Auth::user();
 
-        $document = $user->documents()->findOrFail($id);
+        // Ensure the document belongs to the user
+        if ($document->user_id !== $user->user_id) {
+            abort(403);
+        }
 
         $validated = $request->validate([
             'title'       => 'required|string|max:255',
@@ -113,12 +126,15 @@ class DocumentController extends Controller
     }
 
     // — Delete document
-    public function destroy($id)
+    public function destroy(Document $document)
     {
         /** @var User $user */
         $user = Auth::user();
 
-        $document = $user->documents()->findOrFail($id);
+        // Ensure the document belongs to the user
+        if ($document->user_id !== $user->user_id) {
+            abort(403);
+        }
 
         // Delete the file from storage
         Storage::disk('public')->delete($document->file_path);
@@ -128,23 +144,4 @@ class DocumentController extends Controller
 
         return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
     }
-}
-  public function index() {
-    $documents = Document::with('category')->get(); // eager load category
-    return view('documents.index', compact('documents'));
-}
-// DocumentController.php
-
-public function show(Document $document) {
-    return view('documents.show', compact('document'));
-}
-
-public function edit(Document $document) {
-    return view('documents.edit', compact('document'));
-}
-
-public function destroy(Document $document) {
-    $document->delete();
-    return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
-}
 }

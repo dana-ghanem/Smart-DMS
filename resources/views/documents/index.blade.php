@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 <!DOCTYPE html>
 <html>
 <head>
@@ -34,6 +33,7 @@
                         <th>Description</th>
                         <th>Uploaded</th>
                         <th>File</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -45,6 +45,15 @@
                             <td>{{ Str::limit($doc->description, 50) }}</td>
                             <td>{{ $doc->created_at->format('Y-m-d') }}</td>
                             <td><a href="{{ Storage::url($doc->file_path) }}" target="_blank">View</a></td>
+                            <td>
+                                <a href="{{ route('documents.show', $doc->document_id) }}" class="btn btn-sm btn-info">View</a>
+                                <a href="{{ route('documents.edit', $doc->document_id) }}" class="btn btn-sm btn-warning">Edit</a>
+                                <form method="POST" action="{{ route('documents.destroy', $doc->document_id) }}" class="d-inline" onsubmit="return confirm('Are you sure?')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                </form>
+                            </td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -53,4 +62,3 @@
     </div>
 </body>
 </html>
-=======

@@ -20,7 +20,7 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $primaryKey = 'user_id';
-    public $incrementing = false;
+    public $incrementing = true;
     protected $fillable = [
         'name',
         'email',
