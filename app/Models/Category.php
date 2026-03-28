@@ -1,0 +1,11 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Category extends Model
+{
+    protected $table = 'categories';   // optional if Laravel can infer
+    protected $primaryKey = 'category_id'; // THIS is important
+}

@@ -3,10 +3,6 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-
-namespace App\Http\Controllers;
-
-use Illuminate\Http\Request;
 use App\Models\Document;
 use Illuminate\Support\Facades\Storage;
 
@@ -32,10 +28,29 @@ class DocumentController extends Controller
             'author' => $request->author,
             'description' => $request->description,
             'file_path' => $filePath,
-            'user_id' => 1, // For now, use a test user (later use Auth)
+            'user_id' => 1,
             'category_id' => $request->category_id,
         ]);
 
         return back()->with('success', 'Document uploaded successfully!');
     }
+
+  public function index() {
+    $documents = Document::with('category')->get(); // eager load category
+    return view('documents.index', compact('documents'));
+}
+// DocumentController.php
+
+public function show(Document $document) {
+    return view('documents.show', compact('document'));
+}
+
+public function edit(Document $document) {
+    return view('documents.edit', compact('document'));
+}
+
+public function destroy(Document $document) {
+    $document->delete();
+    return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
+}
 }
