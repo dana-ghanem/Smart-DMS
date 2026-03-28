@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+<<<<<<< HEAD
+=======
+use Illuminate\Http\Request;
+>>>>>>> Lora-Sobh
 use App\Models\Document;
 use App\Models\User;
 use App\Models\Category;
@@ -40,6 +44,7 @@ class DocumentController extends Controller
         // Create or find category by name and use its category_id
         $category = Category::firstOrCreate(['name' => $validated['category']]);
 
+<<<<<<< HEAD
         // Store the file
         $path = $request->file('file')->store('documents', 'public');
 
@@ -52,11 +57,22 @@ class DocumentController extends Controller
             'description' => $validated['description'] ?? null,
             'category_id' => $category->category_id,
             'file_path'   => $path,
+=======
+        // 3️⃣ Save record in database
+        Document::create([
+            'title' => $request->title,
+            'author' => $request->author,
+            'description' => $request->description,
+            'file_path' => $filePath,
+            'user_id' => 1,
+            'category_id' => $request->category_id,
+>>>>>>> Lora-Sobh
         ]);
 
         return redirect()->route('documents.index')->with('success', 'Document uploaded successfully.');
     }
 
+<<<<<<< HEAD
     // — Show edit form
     public function edit($id)
     {
@@ -121,3 +137,24 @@ class DocumentController extends Controller
         return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
     }
 }
+=======
+  public function index() {
+    $documents = Document::with('category')->get(); // eager load category
+    return view('documents.index', compact('documents'));
+}
+// DocumentController.php
+
+public function show(Document $document) {
+    return view('documents.show', compact('document'));
+}
+
+public function edit(Document $document) {
+    return view('documents.edit', compact('document'));
+}
+
+public function destroy(Document $document) {
+    $document->delete();
+    return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
+}
+}
+>>>>>>> Lora-Sobh

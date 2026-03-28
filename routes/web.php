@@ -1,13 +1,18 @@
+
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
+
 use App\Http\Controllers\DocumentController;
+
+Route::resource('documents', DocumentController::class);
+
 
 // Home
 Route::get('/', function () {
     return view('welcome');
 });
+
 
 // Auth routes
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
@@ -29,3 +34,4 @@ Route::middleware('auth')->group(function () {
     // — Delete
     Route::delete('/documents/{id}', [DocumentController::class, 'destroy'])->name('documents.destroy');
 });
+

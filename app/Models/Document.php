@@ -5,7 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Category;
+<<<<<<< HEAD
 
+=======
+>>>>>>> Lora-Sobh
 class Document extends Model
 {
     use HasFactory;
@@ -24,8 +27,19 @@ class Document extends Model
         return $this->belongsTo(User::class);
     }
 
+<<<<<<< HEAD
     public function category()
     {
         return $this->belongsTo(Category::class);
     }
 }
+=======
+    // Relation with Category
+   public function category() {
+    return $this->belongsTo(Category::class); // assuming category_id
+}
+public function author() {
+    return $this->belongsTo(Author::class);
+}
+}
+>>>>>>> Lora-Sobh
