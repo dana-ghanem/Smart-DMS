@@ -12,6 +12,10 @@ class AuthController extends Controller
     // Show login form
     public function showLoginForm()
     {
+        if (Auth::check()) {
+            return redirect()->route('documents.index');
+        }
+
         return view('auth.login');
     }
 
