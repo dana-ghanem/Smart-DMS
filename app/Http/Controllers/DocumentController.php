@@ -144,4 +144,5 @@ class DocumentController extends Controller
 
         return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
     }
+    
 }
