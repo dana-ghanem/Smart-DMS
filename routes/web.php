@@ -1,8 +1,12 @@
+
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
+
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\AuthController;
+
+Route::resource('documents', DocumentController::class)->middleware('auth');
 
 // Home
 Route::get('/', function () {
@@ -16,9 +20,3 @@ Route::get('/register', [AuthController::class, 'showRegisterForm'])->name('regi
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-// Document routes (protected)
-Route::middleware('auth')->group(function () {
-    Route::get('/documents', [DocumentController::class, 'index'])->name('documents.index');
-    Route::get('/documents/upload', [DocumentController::class, 'create'])->name('documents.create');
-    Route::post('/documents', [DocumentController::class, 'store'])->name('documents.store');
-});

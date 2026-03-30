@@ -8,18 +8,18 @@
     <div class="container mt-5">
         <h1>Upload Document</h1>
 
-        @if ($errors->any())
+        <?php if($errors->any()): ?>
             <div class="alert alert-danger">
                 <ul>
-                    @foreach ($errors->all() as $error)
-                        <li>{{ $error }}</li>
-                    @endforeach
+                    <?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                        <li><?php echo e($error); ?></li>
+                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                 </ul>
             </div>
-        @endif
+        <?php endif; ?>
 
-        <form action="{{ route('documents.store') }}" method="POST" enctype="multipart/form-data">
-            @csrf
+        <form action="<?php echo e(route('documents.store')); ?>" method="POST" enctype="multipart/form-data">
+            <?php echo csrf_field(); ?>
             <div class="mb-3">
                 <label>Title</label>
                 <input type="text" name="title" class="form-control" required>
@@ -34,7 +34,7 @@
             </div>
             <div class="mb-3">
                 <label>Category</label>
-                <input type="text" name="category" class="form-control" value="{{ old('category') }}" required>
+                <input type="text" name="category" class="form-control" value="<?php echo e(old('category')); ?>" required>
                 <small class="form-text text-muted">Type a category name (e.g. "network"). It will be created if missing.</small>
             </div>
             <div class="mb-3">
@@ -42,8 +42,9 @@
                 <input type="file" name="file" class="form-control" required>
             </div>
             <button type="submit" class="btn btn-primary">Upload</button>
-            <a href="{{ route('documents.index') }}" class="btn btn-secondary">Cancel</a>
+            <a href="<?php echo e(route('documents.index')); ?>" class="btn btn-secondary">Cancel</a>
         </form>
     </div>
 </body>
 </html>
+<?php /**PATH C:\smart-dms\resources\views/documents/upload.blade.php ENDPATH**/ ?>

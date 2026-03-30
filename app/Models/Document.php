@@ -9,7 +9,7 @@ use App\Models\Category;
 class Document extends Model
 {
     use HasFactory;
-    protected $primaryKey = 'id';
+    protected $primaryKey = 'document_id';
     protected $fillable = [
         'user_id',
         'title',
