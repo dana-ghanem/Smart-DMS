@@ -25,8 +25,8 @@
                 <input type="text" name="title" class="form-control" required>
             </div>
             <div class="mb-3">
-                <label>Author</label>
-                <input type="text" name="author" class="form-control">
+                <label>Author Name</label>
+                <input type="text" name="author_name" class="form-control">
             </div>
             <div class="mb-3">
                 <label>Description</label>
@@ -34,7 +34,12 @@
             </div>
             <div class="mb-3">
                 <label>Category</label>
-                <input type="text" name="category" class="form-control">
+                <select name="category_id" class="form-control" required>
+                    <option value="">Select a category</option>
+                    @foreach($categories as $category)
+                        <option value="{{ $category->category_id }}">{{ $category->name }}</option>
+                    @endforeach
+                </select>
             </div>
             <div class="mb-3">
                 <label>File</label>

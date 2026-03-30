@@ -22,7 +22,8 @@ class DocumentController extends Controller
     // Show upload form
     public function create()
     {
-        return view('documents.upload');
+        $categories = \App\Models\Category::all();
+        return view('documents.upload', compact('categories'));
     }
 
     // Store uploaded document

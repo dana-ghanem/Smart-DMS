@@ -25,7 +25,7 @@ class AuthController extends Controller
 
         if (Auth::attempt($credentials, $request->has('remember'))) {
             $request->session()->regenerate();
-            return redirect()->intended('documents'); // Change to your intended route
+            return redirect()->intended(route('documents.index'));
         }
 
         return back()->withErrors([
@@ -55,10 +55,7 @@ class AuthController extends Controller
         ]);
 
         Auth::login($user);
-        // lora u need to create a document controller and change the below to '/document'
-        
-// or
-        return redirect('/documents');               // after registration
+        return redirect()->route('documents.index');
     }
 
     // Handle logout
@@ -67,6 +64,6 @@ class AuthController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-         return redirect()->intended('/documents'); 
+        return redirect('/login');
     }
 }
