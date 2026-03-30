@@ -1,9 +1,13 @@
-@php
-$documents = [
-  ['title' => 'AI Report', 'description' => 'About AI'],
-  ['title' => 'Business Plan', 'description' => 'Startup ideas']
-];
-@endphp
+@if(!empty($documents) && $documents->count() > 0)
+  @foreach($documents as $doc)
+    <div>
+      <h3>{{ $doc->title }}</h3>
+      <p>{{ $doc->description }}</p>
+    </div>
+  @endforeach
+@else
+  <p>No results found</p>
+@endif
 
 <!DOCTYPE html>
 <html>
@@ -27,7 +31,7 @@ $documents = [
     <h1 style="margin-bottom: 20px;">🔍 Smart Document Search</h1>
 
     <!-- 🔹 Search Form -->
-    <form method="GET" action="/search" style="
+    <form method="GET" action="{{ route('documents.search') }}" style="
         background: white;
         padding: 20px;
         border-radius: 12px;
@@ -40,7 +44,7 @@ $documents = [
     ">
 
         <!-- Search input -->
-        <input type="text" name="query" placeholder="Search documents..." style="
+        <input type="text" name="query" value="{{ request('query') }}" placeholder="Search documents..." style="
             padding: 12px;
             width: 250px;
             border-radius: 8px;

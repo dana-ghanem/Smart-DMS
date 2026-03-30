@@ -1,4 +1,4 @@
-<?php if(isset($documents) && count($documents) > 0): ?>
+<?php if(!empty($documents) && $documents->count() > 0): ?>
   <?php $__currentLoopData = $documents; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $doc): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
     <div>
       <h3><?php echo e($doc->title); ?></h3>
@@ -143,4 +143,4 @@
     </script>
 
 </body>
-</html><?php /**PATH C:\xampp\htdocs\Smart-DMS\resources\views/search.blade.php ENDPATH**/ ?>
+</html><?php /**PATH C:\xampp\htdocs\Smart-DMS\resources\views/documents/search.blade.php ENDPATH**/ ?>

@@ -14,9 +14,9 @@ class DocumentController extends Controller
     // Show list of user's documents
     public function index()
     {
-        /** @var User $user */
         $user = Auth::user();
         $documents = $user->documents()->latest()->get();
+
         return view('documents.index', compact('documents'));
     }
 
@@ -29,10 +29,8 @@ class DocumentController extends Controller
     // Show document details
     public function show(Document $document)
     {
-        /** @var User $user */
         $user = Auth::user();
 
-        // Ensure the document belongs to the user
         if ($document->user_id !== $user->user_id) {
             abort(403);
         }
@@ -51,14 +49,12 @@ class DocumentController extends Controller
             'file'        => 'required|file|mimes:pdf,doc,docx,txt|max:2048',
         ]);
 
-        // Create or find category by name and use its category_id
-        $category = Category::firstOrCreate(['name' => $validated['category']]);
+        $category = Category::firstOrCreate([
+            'name' => $validated['category']
+        ]);
 
-        // Store the file
         $path = $request->file('file')->store('documents', 'public');
 
-        // Create the document record
-        /** @var User $user */
         $user = Auth::user();
         $user->documents()->create([
             'title'       => $validated['title'],
@@ -68,16 +64,16 @@ class DocumentController extends Controller
             'file_path'   => $path,
         ]);
 
-        return redirect()->route('documents.index')->with('success', 'Document uploaded successfully.');
+        // ✅ FIX: redirect instead of wrong view
+        return redirect()->route('documents.index')
+                         ->with('success', 'Document uploaded successfully.');
     }
 
-    // — Show edit form
+    // Show edit form
     public function edit(Document $document)
     {
-        /** @var User $user */
         $user = Auth::user();
 
-        // Ensure the document belongs to the user
         if ($document->user_id !== $user->user_id) {
             abort(403);
         }
@@ -87,13 +83,11 @@ class DocumentController extends Controller
         return view('documents.edit', compact('document', 'categories'));
     }
 
-    // — Save edited document
+    // Update document
     public function update(Request $request, Document $document)
     {
-        /** @var User $user */
         $user = Auth::user();
 
-        // Ensure the document belongs to the user
         if ($document->user_id !== $user->user_id) {
             abort(403);
         }
@@ -106,11 +100,13 @@ class DocumentController extends Controller
             'file'        => 'nullable|file|mimes:pdf,doc,docx,txt|max:2048',
         ]);
 
-        $category = Category::firstOrCreate(['name' => $validated['category']]);
+        $category = Category::firstOrCreate([
+            'name' => $validated['category']
+        ]);
 
-        // If a new file is uploaded, replace the old one
         if ($request->hasFile('file')) {
             Storage::disk('public')->delete($document->file_path);
+
             $validated['file_path'] = $request->file('file')->store('documents', 'public');
         }
 
@@ -122,27 +118,43 @@ class DocumentController extends Controller
             'file_path'   => $validated['file_path'] ?? $document->file_path,
         ]);
 
-        return redirect()->route('documents.index')->with('success', 'Document updated successfully.');
+        return redirect()->route('documents.index')
+                         ->with('success', 'Document updated successfully.');
     }
 
-    // — Delete document
+    // Delete document
     public function destroy(Document $document)
     {
-        /** @var User $user */
         $user = Auth::user();
 
-        // Ensure the document belongs to the user
         if ($document->user_id !== $user->user_id) {
             abort(403);
         }
 
-        // Delete the file from storage
         Storage::disk('public')->delete($document->file_path);
 
-        // Delete the database record
         $document->delete();
 
-        return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
+        return redirect()->route('documents.index')
+                         ->with('success', 'Document deleted successfully.');
     }
-    
+
+    // Search documents
+   public function search(Request $request)
+{
+    $query = trim($request->input('query', '')); // default empty string
+
+    $user = Auth::user();
+
+    $documents = $user->documents()
+        ->when($query != '', function ($q) use ($query) {
+            $q->where('title', 'LIKE', "%{$query}%")
+              ->orWhere('author_name', 'LIKE', "%{$query}%")
+              ->orWhere('description', 'LIKE', "%{$query}%");
+        })
+        ->latest()
+        ->get();
+
+    return view('documents.search', compact('documents', 'query'));
+}
 }
