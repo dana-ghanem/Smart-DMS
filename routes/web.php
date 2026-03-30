@@ -1,8 +1,6 @@
-
 <?php
 
 use Illuminate\Support\Facades\Route;
-
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\AuthController;
 
@@ -20,3 +18,7 @@ Route::get('/register', [AuthController::class, 'showRegisterForm'])->name('regi
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
+// Keyword Search
+Route::get('/documents/search', [DocumentController::class, 'search'])
+    ->name('documents.search')
+    ->middleware('auth');

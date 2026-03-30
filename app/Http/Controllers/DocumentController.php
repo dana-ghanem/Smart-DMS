@@ -144,4 +144,27 @@ class DocumentController extends Controller
 
         return redirect()->route('documents.index')->with('success', 'Document deleted successfully.');
     }
+
+    // Keyword Search ──────────────────────────────────────────────
+    public function search(Request $request)
+    {
+        $request->validate([
+            'query' => 'required|string|max:255',
+        ]);
+
+        /** @var User $user */
+        $user  = Auth::user();
+        $query = trim($request->input('query'));
+
+        $documents = $user->documents()
+            ->where(function ($q) use ($query) {
+                $q->where('title', 'LIKE', "%{$query}%")
+                  ->orWhere('author_name', 'LIKE', "%{$query}%")
+                  ->orWhere('description', 'LIKE', "%{$query}%");
+            })
+            ->latest()
+            ->get();
+
+        return view('documents.search', compact('documents', 'query'));
+    }
 }
