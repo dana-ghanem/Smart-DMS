@@ -55,9 +55,7 @@ class AuthController extends Controller
         ]);
 
         Auth::login($user);
-        // lora u need to create a document controller and change the below to '/document'
-        return redirect()->intended('/');   
-        return redirect('/');
+        return redirect()->intended('documents');
     }
 
     // Handle logout
