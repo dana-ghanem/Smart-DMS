@@ -25,7 +25,7 @@ class AuthController extends Controller
 
         if (Auth::attempt($credentials, $request->has('remember'))) {
             $request->session()->regenerate();
-            return redirect()->intended(route('documents.index'));
+            return redirect()->route('documents.index');
         }
 
         return back()->withErrors([
@@ -55,7 +55,7 @@ class AuthController extends Controller
         ]);
 
         Auth::login($user);
-        return redirect()->intended(route('documents.index'));
+        return redirect()->route('documents.index');
     }
 
     // Handle logout
