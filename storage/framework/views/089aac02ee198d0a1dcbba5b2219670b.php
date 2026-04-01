@@ -51,19 +51,17 @@
             border: 1px solid #ccc;
         ">
 
-        <!-- Category filter -->
-        <select name="category" style="padding: 12px; border-radius: 8px;">
-            <option value="">All Categories</option>
-            <option value="General">General</option>
-            <option value="Reports">Reports</option>
-        </select>
+        <select name="category">
+    <option value="">All Categories</option>
+    <option value="General">General</option>
+    <option value="Reports">Reports</option>
+</select>
 
-        <!-- Author filter -->
-        <select name="author" style="padding: 12px; border-radius: 8px;">
-            <option value="">All Authors</option>
-            <option value="Admin">Admin</option>
-            <option value="User1">User1</option>
-        </select>
+<select name="author">
+    <option value="">All Authors</option>
+    <option value="Admin">Admin</option>
+    <option value="User1">User1</option>
+</select>
 
         <!-- Submit button -->
         <button type="submit" onclick="fakeSearch()" style="
