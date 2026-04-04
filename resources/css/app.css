@@ -1,5 +1,15 @@
 @import 'tailwindcss';
 
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
 /* ── SMART-DMS Design System ── */
 @layer base {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -343,4 +353,60 @@
 
     /* ── Delete form inline ── */
     .delete-form { display: inline; }
+
+    /* ── User badge with email tooltip ── */
+    .user-badge {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        cursor: default;
+        transition: border-color 0.15s;
+    }
+    .user-badge:hover { border-color: var(--border-md); }
+    .user-avatar {
+        width: 28px; height: 28px;
+        border-radius: 50%;
+        background: var(--accent-bg);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 600; color: var(--accent);
+        flex-shrink: 0;
+    }
+    .user-name { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+    .user-tooltip {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        background: var(--text);
+        color: #fff;
+        font-size: 0.78rem;
+        padding: 7px 12px;
+        border-radius: var(--radius-sm);
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-4px);
+        transition: opacity 0.15s, transform 0.15s;
+        z-index: 300;
+    }
+    .user-tooltip::before {
+        content: '';
+        position: absolute;
+        top: -5px; right: 16px;
+        width: 0; height: 0;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-bottom: 5px solid var(--text);
+    }
+    .user-badge:hover .user-tooltip {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }

@@ -13,6 +13,18 @@
 <nav class="nav">
     <a href="<?php echo e(route('documents.index')); ?>" class="nav-brand">smart<span>DMS</span></a>
     <div class="nav-right">
+        <div class="user-badge" id="userBadge">
+            <div class="user-avatar">
+                <?php echo e(strtoupper(substr(Auth::user()->name, 0, 1))); ?>
+
+            </div>
+            <span class="user-name"><?php echo e(Auth::user()->name); ?></span>
+            <div class="user-tooltip">
+                <i class="fas fa-envelope" style="font-size:11px;"></i>
+                <?php echo e(Auth::user()->email); ?>
+
+            </div>
+        </div>
         <a href="<?php echo e(route('documents.create')); ?>" class="btn btn-primary">
             <i class="fas fa-plus" style="font-size:12px;"></i> Upload New
         </a>
