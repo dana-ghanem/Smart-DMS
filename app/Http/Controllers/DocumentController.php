@@ -64,7 +64,6 @@ class DocumentController extends Controller
             'file_path'   => $path,
         ]);
 
-        // ✅ FIX: redirect instead of wrong view
         return redirect()->route('documents.index')
                          ->with('success', 'Document uploaded successfully.');
     }
@@ -138,35 +137,4 @@ class DocumentController extends Controller
         return redirect()->route('documents.index')
                          ->with('success', 'Document deleted successfully.');
     }
-
-    // Search documents
-   public function search(Request $request)
-{
-    $query    = trim($request->input('query', ''));
-    $category = $request->input('category');
-    $author   = $request->input('author');
-
-    $user = Auth::user();
-
-    $documents = $user->documents()
-        ->when($query != '', function ($q) use ($query) {
-            $q->where(function ($q2) use ($query) {
-                $q2->where('title', 'LIKE', "%{$query}%")
-                   ->orWhere('author_name', 'LIKE', "%{$query}%")
-                   ->orWhere('description', 'LIKE', "%{$query}%");
-            });
-        })
-        ->when($category != '', function ($q) use ($category) {
-            $q->whereHas('category', function ($q2) use ($category) {
-                $q2->where('name', $category);
-            });
-        })
-        ->when($author != '', function ($q) use ($author) {
-            $q->where('author_name', $author);
-        })
-        ->latest()
-        ->get();
-
-    return view('documents.search', compact('documents', 'query'));
-}
 }
