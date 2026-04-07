@@ -17,6 +17,8 @@ class Document extends Model
         'description',
         'file_path',
         'category_id',
+        'processed_tokens',
+        'token_count',
     ];
 
     public function user()

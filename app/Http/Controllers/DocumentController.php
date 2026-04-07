@@ -8,9 +8,114 @@ use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Process\Process;
+use Symfony\Component\Process\Exception\ProcessFailedException;
 
 class DocumentController extends Controller
 {
+    /**
+     * Call Python text preprocessing script
+     */
+    private function callPythonPreprocessing($text, $removeStopwords = true, $lemmatize = true)
+    {
+        try {
+            // Build Python command
+            $pythonPath = base_path('python/api.py');
+            $command = [
+                'python',
+                $pythonPath,
+                $text,
+                $removeStopwords ? 'true' : 'false',
+                $lemmatize ? 'true' : 'false'
+            ];
+            
+            $process = new Process($command);
+            $process->run();
+            
+            if (!$process->isSuccessful()) {
+                throw new ProcessFailedException($process);
+            }
+            
+            $output = $process->getOutput();
+            return json_decode($output, true);
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Preprocess text via API
+     */
+    public function preprocessText(Request $request)
+    {
+        $validated = $request->validate([
+            'text' => 'required|string',
+            'remove_stopwords' => 'boolean',
+            'lemmatize' => 'boolean',
+        ]);
+
+        $text = $validated['text'];
+        $removeStopwords = $validated['remove_stopwords'] ?? true;
+        $lemmatize = $validated['lemmatize'] ?? true;
+
+        $result = $this->callPythonPreprocessing($text, $removeStopwords, $lemmatize);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Preprocess and analyze a document
+     */
+    public function analyzeDocument(Request $request)
+    {
+        $validated = $request->validate([
+            'document_id' => 'required|integer|exists:documents,document_id',
+        ]);
+
+        $document = Document::find($validated['document_id']);
+        $user = Auth::user();
+
+        // Check authorization
+        if ($document->user_id !== $user->user_id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $text = $document->description ?? '';
+
+        if (empty($text)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Document has no description to analyze'
+            ]);
+        }
+
+        $result = $this->callPythonPreprocessing($text);
+
+        if ($result['success']) {
+            // Save processed tokens to document
+            $document->update([
+                'processed_tokens' => json_encode($result['tokens']),
+                'token_count' => $result['token_count']
+            ]);
+        }
+
+        return response()->json($result);
+    }
+
+    /**
+     * Show text preprocessing tool
+     */
+    public function showPreprocessTool()
+    {
+        $user = Auth::user();
+        $documents = $user->documents()->latest()->get();
+
+        return view('documents.preprocess', compact('documents'));
+    }
+
     // Show list of user's documents
     public function index()
     {

@@ -6,6 +6,13 @@ use App\Http\Controllers\AuthController;
 
 Route::resource('documents', DocumentController::class)->middleware('auth');
 
+// Text Preprocessing API Routes
+Route::middleware('auth')->group(function () {
+    Route::get('/documents/preprocess/tool', [DocumentController::class, 'showPreprocessTool'])->name('preprocess.tool');
+    Route::post('/api/preprocess', [DocumentController::class, 'preprocessText'])->name('preprocess.text');
+    Route::post('/api/analyze-document', [DocumentController::class, 'analyzeDocument'])->name('analyze.document');
+});
+
 // Home
 Route::get('/', function () {
     return view('welcome');

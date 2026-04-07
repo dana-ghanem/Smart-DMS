@@ -26,6 +26,9 @@
         <a href="{{ route('documents.create') }}" class="btn btn-primary">
             <i class="fas fa-plus" style="font-size:12px;"></i> Upload New
         </a>
+        <a href="{{ route('preprocess.tool') }}" class="btn btn-ghost">
+            <i class="fas fa-robot" style="font-size:12px;"></i> AI Preprocess
+        </a>
         <form method="POST" action="{{ route('logout') }}" style="display:inline;">
             @csrf
             <button type="submit" class="btn btn-ghost">
