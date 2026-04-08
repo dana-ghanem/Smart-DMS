@@ -5,7 +5,7 @@ Provides a simple interface to call preprocessing from Laravel
 
 import json
 import sys
-from text_preprocessing import TextPreprocessor
+from ai_module.text_preprocessing import TextPreprocessor
 
 
 def process_text(text, remove_stopwords=True, lemmatize=True):
