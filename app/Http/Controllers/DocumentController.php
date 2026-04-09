@@ -106,6 +106,91 @@ class DocumentController extends Controller
     }
 
     /**
+     * Search documents using AI search engine
+     */
+    public function searchDocuments(Request $request)
+    {
+        $validated = $request->validate([
+            'query'  => 'required|string|max:500',
+            'top_k'  => 'integer|min:1|max:20',
+            'min_score' => 'numeric|min:0|max:1',
+        ]);
+
+        $query = $validated['query'];
+        $topK = $validated['top_k'] ?? 10;
+        $minScore = $validated['min_score'] ?? 0.0;
+
+        try {
+            $pythonPath = base_path('python/search_api.py');
+            $command = [
+                'python',
+                $pythonPath,
+                $query,
+                (string)$topK,
+                (string)$minScore
+            ];
+
+            $process = new Process($command);
+            $process->setTimeout(30);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                throw new ProcessFailedException($process);
+            }
+
+            $output = $process->getOutput();
+            $result = json_decode($output, true);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'query' => $query
+            ], 500);
+        }
+    }
+
+    /**
+     * Get query processing details (for debugging/analysis)
+     */
+    public function analyzeQuery(Request $request)
+    {
+        $validated = $request->validate([
+            'query' => 'required|string|max:500',
+        ]);
+
+        $query = $validated['query'];
+
+        try {
+            $pythonPath = base_path('python/query_api.py');
+            $command = [
+                'python',
+                $pythonPath,
+                $query
+            ];
+
+            $process = new Process($command);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                throw new ProcessFailedException($process);
+            }
+
+            $output = $process->getOutput();
+            $result = json_decode($output, true);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'query' => $query
+            ], 500);
+        }
+    }
+
+    /**
      * Show text preprocessing tool
      */
     public function showPreprocessTool()

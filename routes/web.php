@@ -6,11 +6,15 @@ use App\Http\Controllers\AuthController;
 
 Route::resource('documents', DocumentController::class)->middleware('auth');
 
-// Text Preprocessing API Routes
+// Text Preprocessing & AI Search API Routes
 Route::middleware('auth')->group(function () {
     Route::get('/documents/preprocess/tool', [DocumentController::class, 'showPreprocessTool'])->name('preprocess.tool');
     Route::post('/api/preprocess', [DocumentController::class, 'preprocessText'])->name('preprocess.text');
     Route::post('/api/analyze-document', [DocumentController::class, 'analyzeDocument'])->name('analyze.document');
+
+    // AI Search Routes
+    Route::post('/api/search', [DocumentController::class, 'searchDocuments'])->name('search.documents');
+    Route::post('/api/analyze-query', [DocumentController::class, 'analyzeQuery'])->name('analyze.query');
 });
 
 // Home
