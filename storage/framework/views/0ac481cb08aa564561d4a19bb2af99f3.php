@@ -28,6 +28,9 @@
         <a href="<?php echo e(route('documents.create')); ?>" class="btn btn-primary">
             <i class="fas fa-plus" style="font-size:12px;"></i> Upload New
         </a>
+        <a href="<?php echo e(route('preprocess.tool')); ?>" class="btn btn-ghost">
+            <i class="fas fa-robot" style="font-size:12px;"></i> AI Preprocess
+        </a>
         <form method="POST" action="<?php echo e(route('logout')); ?>" style="display:inline;">
             <?php echo csrf_field(); ?>
             <button type="submit" class="btn btn-ghost">
