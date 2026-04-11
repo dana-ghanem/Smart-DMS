@@ -1,50 +1,115 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Upload Document</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Document — SMART-DMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <?php echo app('Illuminate\Foundation\Vite')(['resources/css/app.css', 'resources/js/app.js']); ?>
 </head>
 <body>
-    <div class="container mt-5">
-        <h1>Upload Document</h1>
 
-        <?php if($errors->any()): ?>
-            <div class="alert alert-danger">
+<nav class="nav">
+    <a href="<?php echo e(route('documents.index')); ?>" class="nav-brand">smart<span>DMS</span></a>
+    <div class="nav-right">
+        <a href="<?php echo e(route('documents.index')); ?>" class="btn btn-ghost">
+            <i class="fas fa-arrow-left" style="font-size:12px;"></i> Back
+        </a>
+    </div>
+</nav>
+
+<div class="main-narrow">
+
+    <div class="page-header">
+        <h1>Upload Document</h1>
+        <p>Add a new file to your document library.</p>
+    </div>
+
+    <?php if($errors->any()): ?>
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-circle"></i>
+            <div>
+                Please fix the following errors:
                 <ul>
                     <?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                         <li><?php echo e($error); ?></li>
                     <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                 </ul>
             </div>
-        <?php endif; ?>
+        </div>
+    <?php endif; ?>
 
-        <form action="<?php echo e(route('documents.store')); ?>" method="POST" enctype="multipart/form-data">
+    <div class="card" style="padding: 2rem;">
+        <form action="<?php echo e(route('documents.store')); ?>" method="POST" enctype="multipart/form-data" id="uploadForm">
             <?php echo csrf_field(); ?>
-            <div class="mb-3">
-                <label>Title</label>
-                <input type="text" name="title" class="form-control" required>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Title <span style="color:var(--danger)">*</span></label>
+                    <input type="text" name="title" class="form-control" value="<?php echo e(old('title')); ?>" placeholder="e.g. Network Report" required>
+                </div>
+                <div class="form-group">
+                    <label>Author</label>
+                    <input type="text" name="author_name" class="form-control" value="<?php echo e(old('author_name')); ?>" placeholder="e.g. Jamal">
+                </div>
             </div>
-            <div class="mb-3">
-                <label>Author</label>
-                <input type="text" name="author_name" class="form-control">
+
+            <div class="form-group">
+                <label>Category <span style="color:var(--danger)">*</span></label>
+                <input type="text" name="category" class="form-control" value="<?php echo e(old('category')); ?>" placeholder="e.g. network, reports, general…" required>
+                <p class="form-hint">A new category will be created automatically if it doesn't exist.</p>
             </div>
-            <div class="mb-3">
+
+            <div class="form-group">
                 <label>Description</label>
-                <textarea name="description" class="form-control" rows="3"></textarea>
+                <textarea name="description" class="form-control" placeholder="Brief description of this document…"><?php echo e(old('description')); ?></textarea>
             </div>
-            <div class="mb-3">
-                <label>Category</label>
-                <input type="text" name="category" class="form-control" value="<?php echo e(old('category')); ?>" required>
-                <small class="form-text text-muted">Type a category name (e.g. "network"). It will be created if missing.</small>
+
+            <div class="form-group">
+                <label>File <span style="color:var(--danger)">*</span></label>
+                <div class="file-drop" id="fileDrop">
+                    <input type="file" name="file" id="fileInput" accept=".pdf,.doc,.docx,.txt" required>
+                    <div class="file-drop-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                    <p><span>Click to browse</span> or drag & drop</p>
+                    <p style="font-size:0.75rem; margin-top:4px;">PDF, DOC, DOCX, TXT — max 2MB</p>
+                    <p class="file-name" id="fileName"></p>
+                </div>
             </div>
-            <div class="mb-3">
-                <label>File</label>
-                <input type="file" name="file" class="form-control" required>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-upload" style="font-size:12px;"></i> Upload Document
+                </button>
+                <a href="<?php echo e(route('documents.index')); ?>" class="btn btn-ghost">Cancel</a>
             </div>
-            <button type="submit" class="btn btn-primary">Upload</button>
-            <a href="<?php echo e(route('documents.index')); ?>" class="btn btn-secondary">Cancel</a>
         </form>
     </div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const fileName  = document.getElementById('fileName');
+    const fileDrop  = document.getElementById('fileDrop');
+
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+            fileName.textContent = '✓ ' + fileInput.files[0].name;
+            fileName.style.display = 'block';
+        }
+    });
+    fileDrop.addEventListener('dragover',  e => { e.preventDefault(); fileDrop.classList.add('dragover'); });
+    fileDrop.addEventListener('dragleave', ()  => fileDrop.classList.remove('dragover'));
+    fileDrop.addEventListener('drop', e => {
+        e.preventDefault(); fileDrop.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            fileName.textContent = '✓ ' + e.dataTransfer.files[0].name;
+            fileName.style.display = 'block';
+        }
+    });
+</script>
+
 </body>
 </html>
 <?php /**PATH C:\xampp\htdocs\Smart-DMS\resources\views/documents/upload.blade.php ENDPATH**/ ?>

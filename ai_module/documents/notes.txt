@@ -1,0 +1,3 @@
+Artificial Intelligence improves document search.
+Machine learning helps rank documents by relevance.
+TF-IDF scores are used for intelligent text retrieval.
