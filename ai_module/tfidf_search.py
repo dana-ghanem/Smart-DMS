@@ -37,29 +37,30 @@ tfidf_matrix = vectorizer.fit_transform(docs)
 logger.info("TF-IDF matrix shape: %s", tfidf_matrix.shape)
 
 # Interactive search
-while True:
-    keyword = input("\nEnter keyword to search (or 'exit'): ").strip()
-    if keyword.lower() == "exit":
-        break
-    if not keyword:
-        continue
 
-    if keyword not in vectorizer.vocabulary_:
-        print("❌ Keyword not found in any document.")
-        continue
+# Interactive search
+if __name__ == "__main__":
+    while True:
+        keyword = input("\nEnter keyword to search (or 'exit'): ").strip()
+        if keyword.lower() == "exit":
+            break
+        if not keyword:
+            continue
 
-    # Get TF-IDF scores for this keyword
-    idx = vectorizer.vocabulary_[keyword]
-    scores = tfidf_matrix[:, idx].toarray().flatten()
+        if keyword not in vectorizer.vocabulary_:
+            print("❌ Keyword not found in any document.")
+            continue
 
-    # Rank documents
-    ranked = sorted(
-        zip(file_names, scores),
-        key=lambda x: x[1],
-        reverse=True
-    )
+        idx = vectorizer.vocabulary_[keyword]
+        scores = tfidf_matrix[:, idx].toarray().flatten()
 
-    print("\nTop results:")
-    for fname, score in ranked:
-        if score > 0:
-            print(f"  {fname}  (score: {score:.4f})")
+        ranked = sorted(
+            zip(file_names, scores),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        print("\nTop results:")
+        for fname, score in ranked:
+            if score > 0:
+                print(f"  {fname}  (score: {score:.4f})")
