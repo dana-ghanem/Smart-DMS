@@ -1,0 +1,158 @@
+{
+    "info": {
+        "name": "Smart-DMS AI API (Complete)",
+        "description": "Stateless AI endpoints defined in api.php",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Health Check",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/ai-health",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "ai-health"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Preprocess Text",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"text\": \"Raw document text to be cleaned.\",\n    \"remove_stopwords\": true,\n    \"lemmatize\": true\n}"
+                },
+                "url": {
+                    "raw": "{{base_url}}/api/preprocess",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "preprocess"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Search Documents",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"query\": \"artificial intelligence\",\n    \"top_k\": 10,\n    \"min_score\": 0.1\n}"
+                },
+                "url": {
+                    "raw": "{{base_url}}/api/search",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "search"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Analyze Document",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"document_id\": 1\n}"
+                },
+                "url": {
+                    "raw": "{{base_url}}/api/analyze-document",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "analyze-document"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Analyze Query",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"query\": \"How to optimize search?\"\n}"
+                },
+                "url": {
+                    "raw": "{{base_url}}/api/analyze-query",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "analyze-query"
+                    ]
+                }
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://127.0.0.1:8001",
+            "type": "string"
+        }
+    ]
+}

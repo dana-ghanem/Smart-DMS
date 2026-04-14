@@ -24,26 +24,38 @@ from pathlib import Path
 # Add ai_module to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'ai_module'))
 
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+# Track module loading status
+module_status = {
+    "text_preprocessor": False,
+    "ai_search": False,
+    "query_processor": False
+}
+
 # Import AI module components
 try:
     from text_preprocessing import TextPreprocessor
-    logger = logging.getLogger(__name__)
-    logger.info("TextPreprocessor loaded successfully")
+    module_status["text_preprocessor"] = True
+    logger.info("✓ TextPreprocessor loaded successfully")
 except ImportError as e:
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Could not import TextPreprocessor: {e}")
+    logger.warning(f"✗ Could not import TextPreprocessor: {e}")
 
 try:
     from ai_search import search_documents
-    logger.info("AI Search module loaded successfully")
+    module_status["ai_search"] = True
+    logger.info("✓ AI Search module loaded successfully")
 except ImportError as e:
-    logger.warning(f"Could not import ai_search: {e}")
+    logger.warning(f"✗ Could not import ai_search: {e}")
 
 try:
     from query_processing import QueryProcessor
-    logger.info("QueryProcessor loaded successfully")
+    module_status["query_processor"] = True
+    logger.info("✓ QueryProcessor loaded successfully")
 except ImportError as e:
-    logger.warning(f"Could not import QueryProcessor: {e}")
+    logger.warning(f"✗ Could not import QueryProcessor: {e}")
 
 # ────────────────────────────────────────────────────────────────────
 # FastAPI App Initialization
@@ -129,6 +141,31 @@ class SearchResponse(BaseModel):
     execution_time: Optional[float] = None
 
 
+class DocumentAnalysisRequest(BaseModel):
+    """Request model for document analysis"""
+    text: str = Field(..., description="Document text to analyze", min_length=1)
+    remove_stopwords: bool = Field(True, description="Remove stopwords")
+    lemmatize: bool = Field(True, description="Lemmatize tokens")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "text": "This is a sample document for analysis and processing.",
+                "remove_stopwords": True,
+                "lemmatize": True
+            }
+        }
+
+
+class DocumentAnalysisResponse(BaseModel):
+    """Response model for document analysis"""
+    success: bool
+    tokens: List[str]
+    token_count: int
+    cleaned_text: str
+    text_length: int
+
+
 class QueryAnalysisRequest(BaseModel):
     """Request model for query analysis"""
     query: str = Field(..., description="Query to analyze", min_length=1)
@@ -167,11 +204,7 @@ class HealthResponse(BaseModel):
 
 def check_module_status() -> Dict[str, bool]:
     """Check which AI modules are loaded"""
-    return {
-        "text_preprocessor": "TextPreprocessor" in dir(),
-        "ai_search": "search_documents" in dir(),
-        "query_processor": "QueryProcessor" in dir(),
-    }
+    return module_status
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -209,7 +242,7 @@ async def health_check():
 async def preprocess_text(request: TextPreprocessingRequest):
     """
     Preprocess text: tokenize, remove stopwords, lemmatize
-    
+
     Returns:
     - tokens: List of processed tokens
     - token_count: Number of tokens
@@ -254,9 +287,9 @@ async def preprocess_text(request: TextPreprocessingRequest):
 async def batch_preprocess(texts: List[str]):
     """
     Batch preprocess multiple texts
-    
+
     Request body: List of strings
-    
+
     Returns: List of preprocessing results
     """
     if not texts:
@@ -300,12 +333,12 @@ async def batch_preprocess(texts: List[str]):
 async def search(request: SearchRequest):
     """
     Search documents using AI-powered semantic search
-    
+
     Parameters:
     - query: Search query string
     - top_k: Number of results to return (1-50)
     - min_score: Minimum relevance score threshold (0.0-1.0)
-    
+
     Returns:
     - results: List of relevant documents with similarity scores
     - total_results: Number of results returned
@@ -367,6 +400,61 @@ async def search_get(
 
 
 # ────────────────────────────────────────────────────────────────────
+# Document Analysis Endpoints
+# ────────────────────────────────────────────────────────────────────
+
+
+@app.post("/analyze-document", response_model=DocumentAnalysisResponse, tags=["Document Analysis"])
+async def analyze_document(request: DocumentAnalysisRequest):
+    """
+    Analyze document text: tokenize, remove stopwords, lemmatize
+
+    Parameters:
+    - text: Document text to analyze
+    - remove_stopwords: Remove common stopwords
+    - lemmatize: Lemmatize tokens to base form
+
+    Returns:
+    - tokens: List of processed tokens
+    - token_count: Number of tokens
+    - cleaned_text: Complete cleaned text
+    - text_length: Original text length
+    """
+    try:
+        preprocessor = TextPreprocessor()
+
+        # Get tokens
+        tokens = preprocessor.preprocess(
+            request.text,
+            remove_stopwords=request.remove_stopwords,
+            lemmatize=request.lemmatize
+        )
+
+        # Get cleaned text
+        cleaned_text = preprocessor.preprocess(
+            request.text,
+            remove_stopwords=request.remove_stopwords,
+            lemmatize=request.lemmatize,
+            return_string=True
+        )
+
+        return {
+            "success": True,
+            "tokens": tokens,
+            "token_count": len(tokens),
+            "cleaned_text": cleaned_text,
+            "text_length": len(request.text)
+        }
+
+    except Exception as e:
+        logger.error(f"Document analysis error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Document analysis failed: {str(e)}"
+        )
+
+
+# ────────────────────────────────────────────────────────────────────
 # Query Analysis Endpoints
 # ────────────────────────────────────────────────────────────────────
 
@@ -375,12 +463,12 @@ async def search_get(
 async def analyze_query(request: QueryAnalysisRequest):
     """
     Analyze query: tokenization, expansion, and processing
-    
+
     Parameters:
     - query: Query string to analyze
     - enable_fuzzy: Enable fuzzy matching in analysis
     - enable_expansion: Enable query expansion
-    
+
     Returns:
     - processing: Query processing results
     - expansion: Query expansion suggestions
@@ -411,7 +499,7 @@ async def analyze_query(request: QueryAnalysisRequest):
 async def query_suggestions(query: str = Query(..., description="Query to get suggestions for")):
     """
     Get query expansion suggestions
-    
+
     Returns alternative query formulations and related terms
     """
     try:
@@ -441,7 +529,7 @@ async def query_suggestions(query: str = Query(..., description="Query to get su
 async def search_and_preprocess(request: SearchRequest):
     """
     Search documents AND preprocess the query
-    
+
     Combines search with query preprocessing for enhanced results
     """
     try:

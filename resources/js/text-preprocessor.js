@@ -1,140 +1,89 @@
 /**
  * Text Preprocessing API Helper
- * Handles communication with the Laravel backend preprocessing endpoints
+ * Adapted to match existing Laravel Route: api/preprocess/document/{id}
  */
-
-class TextPreprocessor {
+export default class TextPreprocessor {
     constructor() {
         this.apiBaseUrl = '/api';
         this.csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     }
 
     /**
-     * Preprocess text via API
-     * @param {string} text - Text to preprocess
-     * @param {object} options - Options object
-     * @param {boolean} options.removeStopwords - Remove stopwords (default: true)
-     * @param {boolean} options.lemmatize - Lemmatize tokens (default: true)
-     * @returns {Promise<object>} Processing results
+     * Maps the nested AI response to a flat format for your UI
      */
-    async preprocessText(text, options = {}) {
-        const {
-            removeStopwords = true,
-            lemmatize = true
-        } = options;
+    mapResponse(data) {
+        // If the backend returns data inside 'processing' (as seen in your Postman)
+        if (data.success && data.processing) {
+            const proc = data.processing;
+            return {
+                success: true,
+                tokens: proc.tokens || [],
+                token_count: proc.metadata?.token_count || 0,
+                cleaned_text: proc.metadata?.processed_query || "",
+                text_length: proc.metadata?.original_query?.length || 0
+            };
+        }
 
+        // Pass through error information
+        if (!data.success) {
+            return {
+                success: false,
+                error: data.error || 'Unknown error',
+                document_id: data.document_id,
+                document_title: data.document_title
+            };
+        }
+
+        return data;
+    }
+
+    async preprocessText(text, options = {}) {
         try {
-            console.log('Starting preprocessing...', {text: text.substring(0, 50)});
-            console.log('CSRF Token:', this.csrfToken);
-            
             const response = await fetch(`${this.apiBaseUrl}/preprocess`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': this.csrfToken
                 },
                 body: JSON.stringify({
                     text: text,
-                    remove_stopwords: removeStopwords,
-                    lemmatize: lemmatize
+                    remove_stopwords: options.removeStopwords ?? true,
+                    lemmatize: options.lemmatize ?? true
                 })
             });
 
-            console.log('Response status:', response.status);
             const data = await response.json();
-            console.log('Response data:', data);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return data;
+            return this.mapResponse(data);
         } catch (error) {
-            console.error('Preprocessing error:', error);
-            return {
-                success: false,
-                error: error.message || 'Unknown error occurred'
-            };
+            return { success: false, error: error.message };
         }
     }
 
     /**
-     * Analyze a document
-     * @param {number} documentId - Document ID to analyze
-     * @returns {Promise<object>} Analysis results
+     * Matches route: api/preprocess/document/{id}
      */
     async analyzeDocument(documentId) {
         try {
-            console.log('Analyzing document:', documentId);
-            
-            const response = await fetch(`${this.apiBaseUrl}/analyze-document`, {
-                method: 'POST',
+            // Changed to GET and updated URL structure to match your error message
+            const response = await fetch(`${this.apiBaseUrl}/preprocess/document/${documentId}`, {
+                method: 'GET',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': this.csrfToken
-                },
-                body: JSON.stringify({
-                    document_id: documentId
-                })
+                }
             });
 
-            console.log('Document analysis response status:', response.status);
             const data = await response.json();
-            console.log('Document analysis data:', data);
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                throw new Error(data.message || `Route not found: ${response.status}`);
             }
 
-            return data;
+            return this.mapResponse(data);
         } catch (error) {
-            console.error('Document analysis error:', error);
-            return {
-                success: false,
-                error: error.message || 'Failed to analyze document'
-            };
+            console.error("Document Analysis Error:", error);
+            return { success: false, error: error.message };
         }
-    }
-
-    /**
-     * Display preprocessing results in HTML
-     * @param {object} results - Results from preprocessing
-     * @param {string} containerId - ID of container to display results in
-     */
-    displayResults(results, containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-
-        if (!results.success) {
-            container.innerHTML = `<div class="alert alert-danger">${results.error}</div>`;
-            return;
-        }
-
-        const html = `
-            <div class="preprocessing-results">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h5>Statistics</h5>
-                        <p><strong>Original Length:</strong> ${results.text_length} characters</p>
-                        <p><strong>Tokens Found:</strong> ${results.token_count}</p>
-                    </div>
-                    <div class="col-md-6">
-                        <h5>Cleaned Text</h5>
-                        <p>${results.cleaned_text}</p>
-                    </div>
-                </div>
-                <h5 class="mt-3">Tokens</h5>
-                <div class="tokens-list">
-                    ${results.tokens.map(token => 
-                        `<span class="badge bg-info">${token}</span>`
-                    ).join('')}
-                </div>
-            </div>
-        `;
-
-        container.innerHTML = html;
     }
 }
-
-// Export for use
-window.TextPreprocessor = TextPreprocessor;

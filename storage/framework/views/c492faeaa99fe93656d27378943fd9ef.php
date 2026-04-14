@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <?php echo app('Illuminate\Foundation\Vite')(['resources/css/app.css', 'resources/js/app.js', 'resources/js/documents.js']); ?>
+    <?php echo app('Illuminate\Foundation\Vite')(['resources/css/app.css', 'resources/js/app.js', 'resources/js/documents.js', 'resources/js/text-preprocessor.js']); ?>
 </head>
 <body>
 
@@ -51,7 +51,7 @@
             <div class="col-lg-6">
                 <div style="background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <h5 style="margin-bottom: 16px; font-weight: 600;"><i class="fas fa-pen"></i> Enter Text to Analyze</h5>
-                    
+
                     <form id="preprocessForm">
                         <div class="mb-3">
                             <label for="textInput" class="form-label">Text Content</label>
@@ -87,7 +87,7 @@
                 <?php if($documents && count($documents) > 0): ?>
                 <div style="background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 20px;">
                     <h5 style="margin-bottom: 16px; font-weight: 600;"><i class="fas fa-file-alt"></i> Analyze Your Documents</h5>
-                    
+
                     <div class="list-group">
                         <?php $__currentLoopData = $documents; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $doc): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                             <button type="button" class="list-group-item list-group-item-action analyze-doc-btn" data-doc-id="<?php echo e($doc->document_id); ?>" style="text-align: left; border-radius: 6px; margin-bottom: 8px; border: 1px solid #e9ecef;">
@@ -267,7 +267,15 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('defaultMessage').style.display = 'none';
             document.getElementById('resultsContainer').style.display = 'none';
             document.getElementById('errorContainer').style.display = 'block';
-            document.getElementById('errorMessage').textContent = results.error || 'An error occurred';
+
+            let errorMessage = results.error || 'An error occurred';
+
+            // If it's a missing description error, add an edit link
+            if (results.document_id && errorMessage.includes('has no description')) {
+                errorMessage += ` <a href="/documents/${results.document_id}/edit" class="btn btn-sm btn-primary ms-2">Edit Document</a>`;
+            }
+
+            document.getElementById('errorMessage').innerHTML = errorMessage;
             return;
         }
 
@@ -283,7 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Display tokens
         const tokensList = document.getElementById('tokensList');
-        tokensList.innerHTML = results.tokens.map(token => 
+        tokensList.innerHTML = results.tokens.map(token =>
             `<span style="display: inline-block; background: #0066cc; color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 500;">${escapeHtml(token)}</span>`
         ).join('');
     }
