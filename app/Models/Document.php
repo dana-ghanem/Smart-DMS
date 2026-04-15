@@ -16,6 +16,8 @@ class Document extends Model
         'author_name',
         'description',
         'file_path',
+        'file_hash',
+        'extracted_text',
         'category_id',
         'processed_tokens',
         'token_count',

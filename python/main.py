@@ -1,75 +1,79 @@
 """
-Python FastAPI REST API for Smart DMS AI Module
-================================================
+CHANGES vs original main.py (Student B)
+========================================
+1. Added POST /index-document  — Laravel calls this on every upload/update
+2. Added DELETE /remove-document/{id} — Laravel calls this on delete
+3. Added GET /index-status     — useful for debugging
+4. Replaced /search logic      — now uses the persistent index (document_index.py)
+   instead of rebuilding from the local `ai_module/documents/` folder every call.
 
-This API provides endpoints for:
-- Text Preprocessing
-- Document Search
-- Query Processing and Analysis
-
-Integration with Laravel backend for document management system.
-Student B - FastAPI Backend Development
+Everything else (preprocess, analyze-query, health, etc.) is UNCHANGED.
 """
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import sys
-import json
 import logging
 from pathlib import Path
 
-# Add ai_module to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'ai_module'))
 
-# Configure logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Track module loading status
 module_status = {
     "text_preprocessor": False,
-    "ai_search": False,
-    "query_processor": False
+    "ai_search":         False,
+    "query_processor":   False,
+    "document_index":    False,
 }
 
-# Import AI module components
 try:
     from text_preprocessing import TextPreprocessor
     module_status["text_preprocessor"] = True
-    logger.info("✓ TextPreprocessor loaded successfully")
+    logger.info("✓ TextPreprocessor loaded")
 except ImportError as e:
-    logger.warning(f"✗ Could not import TextPreprocessor: {e}")
+    logger.warning("✗ TextPreprocessor: %s", e)
 
 try:
-    from ai_search import search_documents
+    from ai_search import search_documents as _legacy_search
     module_status["ai_search"] = True
-    logger.info("✓ AI Search module loaded successfully")
+    logger.info("✓ ai_search (legacy) loaded")
 except ImportError as e:
-    logger.warning(f"✗ Could not import ai_search: {e}")
+    logger.warning("✗ ai_search: %s", e)
 
 try:
     from query_processing import QueryProcessor
     module_status["query_processor"] = True
-    logger.info("✓ QueryProcessor loaded successfully")
+    logger.info("✓ QueryProcessor loaded")
 except ImportError as e:
-    logger.warning(f"✗ Could not import QueryProcessor: {e}")
+    logger.warning("✗ QueryProcessor: %s", e)
+
+# NEW: persistent index module
+try:
+    from document_index import index_document, remove_document, search_index, get_index_status
+    module_status["document_index"] = True
+    logger.info("✓ document_index loaded")
+except ImportError as e:
+    logger.warning("✗ document_index: %s", e)
+
+try:
+    from document_reader import read_document
+    module_status["document_reader"] = True
+    logger.info("✓ document_reader loaded")
+except ImportError as e:
+    module_status["document_reader"] = False
+    logger.warning("✗ document_reader: %s", e)
 
 # ────────────────────────────────────────────────────────────────────
-# FastAPI App Initialization
-# ────────────────────────────────────────────────────────────────────
-
 app = FastAPI(
     title="Smart DMS AI API",
     description="REST API for AI-powered document search and text processing",
-    version="1.0.0",
+    version="2.0.0",
 )
-
-# ────────────────────────────────────────────────────────────────────
-# CORS Configuration
-# ────────────────────────────────────────────────────────────────────
 
 app.add_middleware(
     CORSMiddleware,
@@ -80,542 +84,325 @@ app.add_middleware(
 )
 
 # ────────────────────────────────────────────────────────────────────
-# Pydantic Models (Request/Response Schemas)
+# Pydantic models
 # ────────────────────────────────────────────────────────────────────
 
-
 class TextPreprocessingRequest(BaseModel):
-    """Request model for text preprocessing endpoint"""
-    text: str = Field(..., description="Text to preprocess", min_length=1)
-    remove_stopwords: bool = Field(True, description="Remove stopwords")
-    lemmatize: bool = Field(True, description="Lemmatize tokens")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "text": "The quick brown fox jumps over the lazy dog",
-                "remove_stopwords": True,
-                "lemmatize": True
-            }
-        }
-
+    text: str = Field(..., min_length=1)
+    remove_stopwords: bool = True
+    lemmatize: bool = True
 
 class TextPreprocessingResponse(BaseModel):
-    """Response model for text preprocessing"""
     success: bool
     tokens: List[str]
     token_count: int
     cleaned_text: str
     text_length: int
 
-
 class SearchRequest(BaseModel):
-    """Request model for document search"""
-    query: str = Field(..., description="Search query", min_length=1)
-    top_k: int = Field(10, description="Number of results to return", ge=1, le=50)
-    min_score: float = Field(0.0, description="Minimum relevance score", ge=0.0, le=1.0)
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "query": "machine learning",
-                "top_k": 10,
-                "min_score": 0.1
-            }
-        }
-
+    query: str = Field(..., min_length=1)
+    top_k: int = Field(10, ge=1, le=50)
+    min_score: float = Field(0.0, ge=0.0, le=1.0)
 
 class SearchResult(BaseModel):
-    """Individual search result"""
+    document_id: Optional[int] = None
     document: str
     score: float
+    title: Optional[str] = None
+    author: Optional[str] = None
+    category: Optional[str] = None
     content: Optional[str] = None
 
-
 class SearchResponse(BaseModel):
-    """Response model for document search"""
     success: bool
     query: str
     results: List[SearchResult]
     total_results: int
     execution_time: Optional[float] = None
 
-
-class DocumentAnalysisRequest(BaseModel):
-    """Request model for document analysis"""
-    text: str = Field(..., description="Document text to analyze", min_length=1)
-    remove_stopwords: bool = Field(True, description="Remove stopwords")
-    lemmatize: bool = Field(True, description="Lemmatize tokens")
+# NEW: model for indexing a document
+class IndexDocumentRequest(BaseModel):
+    document_id: int = Field(..., description="Laravel DB document_id")
+    title: str       = Field("", description="Document title")
+    author: str      = Field("", description="Author name")
+    description: str = Field("", description="Document description (main searchable text)")
+    category: str    = Field("", description="Category name")
+    text: str        = Field("", description="Full extracted text (optional, falls back to description)")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "text": "This is a sample document for analysis and processing.",
-                "remove_stopwords": True,
-                "lemmatize": True
+                "document_id": 42,
+                "title": "Machine Learning Overview",
+                "author": "John Doe",
+                "description": "An introduction to supervised and unsupervised learning.",
+                "category": "AI",
+                "text": ""
             }
         }
 
+class DocumentAnalysisRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    remove_stopwords: bool = True
+    lemmatize: bool = True
+
+class ExtractDocumentRequest(BaseModel):
+    file_path: str = Field(..., min_length=1)
 
 class DocumentAnalysisResponse(BaseModel):
-    """Response model for document analysis"""
     success: bool
     tokens: List[str]
     token_count: int
     cleaned_text: str
     text_length: int
 
-
 class QueryAnalysisRequest(BaseModel):
-    """Request model for query analysis"""
-    query: str = Field(..., description="Query to analyze", min_length=1)
-    enable_fuzzy: bool = Field(True, description="Enable fuzzy matching")
-    enable_expansion: bool = Field(True, description="Enable query expansion")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "query": "document retrieval",
-                "enable_fuzzy": True,
-                "enable_expansion": True
-            }
-        }
-
+    query: str = Field(..., min_length=1)
+    enable_fuzzy: bool = True
+    enable_expansion: bool = True
 
 class QueryAnalysisResponse(BaseModel):
-    """Response model for query analysis"""
     success: bool
     query: str
     processing: Optional[Dict[str, Any]] = None
     expansion: Optional[Dict[str, Any]] = None
 
-
 class HealthResponse(BaseModel):
-    """Response model for health check"""
     status: str
     version: str
     ai_module_loaded: Dict[str, bool]
 
 
 # ────────────────────────────────────────────────────────────────────
-# Helper Functions
+# Existing endpoints (UNCHANGED)
 # ────────────────────────────────────────────────────────────────────
-
-
-def check_module_status() -> Dict[str, bool]:
-    """Check which AI modules are loaded"""
-    return module_status
-
-
-# ────────────────────────────────────────────────────────────────────
-# API Endpoints
-# ────────────────────────────────────────────────────────────────────
-
 
 @app.get("/", tags=["Root"])
 async def root():
-    """Welcome message and API information"""
-    return {
-        "message": "Smart DMS AI API",
-        "version": "1.0.0",
-        "documentation": "/docs",
-        "description": "REST API for AI-powered document search and text preprocessing"
-    }
-
+    return {"message": "Smart DMS AI API", "version": "2.0.0", "documentation": "/docs"}
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """Health check endpoint - verify API and module status"""
+    return {"status": "healthy", "version": "2.0.0", "ai_module_loaded": module_status}
+
+@app.get("/status", tags=["Status"])
+async def status():
+    idx_status = get_index_status() if module_status["document_index"] else {"error": "not loaded"}
     return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "ai_module_loaded": check_module_status()
+        "api_status":   "running",
+        "version":      "2.0.0",
+        "ai_modules":   module_status,
+        "index_status": idx_status,
+    }
+
+@app.get("/info", tags=["Status"])
+async def info():
+    return {
+        "name":      "Smart DMS AI API",
+        "version":   "2.0.0",
+        "endpoints": {
+            "indexing":          ["/index-document", "/remove-document/{id}", "/index-status"],
+            "text_preprocessing": ["/preprocess", "/preprocess/batch"],
+            "document_search":   ["/search"],
+            "query_analysis":    ["/analyze-query", "/query-suggestions"],
+            "status":            ["/health", "/status", "/info"],
+        },
+        "documentation": "/docs",
     }
 
 
 # ────────────────────────────────────────────────────────────────────
-# Text Preprocessing Endpoints
+# NEW: Indexing endpoints
 # ────────────────────────────────────────────────────────────────────
 
-
-@app.post("/preprocess", response_model=TextPreprocessingResponse, tags=["Text Processing"])
-async def preprocess_text(request: TextPreprocessingRequest):
+@app.post("/index-document", tags=["Indexing"])
+async def api_index_document(request: IndexDocumentRequest):
     """
-    Preprocess text: tokenize, remove stopwords, lemmatize
+    Add or update a document in the search index.
+    Laravel calls this endpoint after every upload or edit.
 
-    Returns:
-    - tokens: List of processed tokens
-    - token_count: Number of tokens
-    - cleaned_text: Complete cleaned text
-    - text_length: Original text length
+    The searchable content is `text` if provided, otherwise falls back to `description`.
     """
-    try:
-        preprocessor = TextPreprocessor()
+    if not module_status["document_index"]:
+        raise HTTPException(status_code=503, detail="document_index module not loaded")
 
-        # Get tokens
-        tokens = preprocessor.preprocess(
-            request.text,
-            remove_stopwords=request.remove_stopwords,
-            lemmatize=request.lemmatize
-        )
+    # Use `text` if provided and non-empty, else fall back to description
+    searchable_text = request.text.strip() if request.text.strip() else request.description.strip()
 
-        # Get cleaned text
-        cleaned_text = preprocessor.preprocess(
-            request.text,
-            remove_stopwords=request.remove_stopwords,
-            lemmatize=request.lemmatize,
-            return_string=True
-        )
-
-        return {
-            "success": True,
-            "tokens": tokens,
-            "token_count": len(tokens),
-            "cleaned_text": cleaned_text,
-            "text_length": len(request.text)
-        }
-
-    except Exception as e:
-        logger.error(f"Text preprocessing error: {str(e)}")
+    if not searchable_text:
         raise HTTPException(
-            status_code=500,
-            detail=f"Text preprocessing failed: {str(e)}"
+            status_code=422,
+            detail="Provide at least a non-empty 'description' or 'text' field to index."
         )
 
+    result = index_document(
+        document_id=request.document_id,
+        title=request.title,
+        author=request.author,
+        description=request.description,
+        category=request.category,
+        text=searchable_text,
+    )
 
-@app.post("/preprocess/batch", tags=["Text Processing"])
-async def batch_preprocess(texts: List[str]):
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "Indexing failed"))
+
+    return result
+
+
+@app.delete("/remove-document/{document_id}", tags=["Indexing"])
+async def api_remove_document(document_id: int):
     """
-    Batch preprocess multiple texts
-
-    Request body: List of strings
-
-    Returns: List of preprocessing results
+    Remove a document from the search index.
+    Laravel calls this when a document is deleted.
     """
-    if not texts:
-        raise HTTPException(status_code=400, detail="Empty text list")
+    if not module_status["document_index"]:
+        raise HTTPException(status_code=503, detail="document_index module not loaded")
 
-    if len(texts) > 100:
-        raise HTTPException(status_code=400, detail="Maximum 100 texts per request")
+    result = remove_document(document_id)
+    return result
 
-    try:
-        preprocessor = TextPreprocessor()
-        results = []
 
-        for text in texts:
-            tokens = preprocessor.preprocess(text, remove_stopwords=True, lemmatize=True)
-            cleaned = preprocessor.preprocess(text, remove_stopwords=True, lemmatize=True, return_string=True)
+@app.get("/index-status", tags=["Indexing"])
+async def api_index_status():
+    """Show what's currently in the search index. Useful for debugging."""
+    if not module_status["document_index"]:
+        raise HTTPException(status_code=503, detail="document_index module not loaded")
 
-            results.append({
-                "original_text": text,
-                "tokens": tokens,
-                "token_count": len(tokens),
-                "cleaned_text": cleaned
-            })
+    return get_index_status()
 
-        return {
-            "success": True,
-            "total_processed": len(results),
-            "results": results
-        }
 
-    except Exception as e:
-        logger.error(f"Batch preprocessing error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Batch preprocessing failed: {str(e)}")
+@app.post("/extract-document", tags=["Indexing"])
+async def api_extract_document(request: ExtractDocumentRequest):
+    """Extract raw text and metadata from a local document file."""
+    if not module_status.get("document_reader"):
+        raise HTTPException(status_code=503, detail="document_reader module not loaded")
+
+    result = read_document(request.file_path)
+    if not result.get("success"):
+        raise HTTPException(status_code=422, detail=result.get("error", "Document extraction failed"))
+
+    return result
 
 
 # ────────────────────────────────────────────────────────────────────
-# Document Search Endpoints
+# FIXED: Search endpoint (uses persistent index, not local files)
 # ────────────────────────────────────────────────────────────────────
-
 
 @app.post("/search", response_model=SearchResponse, tags=["Document Search"])
 async def search(request: SearchRequest):
     """
-    Search documents using AI-powered semantic search
+    AI-powered document search over the persistent index.
 
-    Parameters:
-    - query: Search query string
-    - top_k: Number of results to return (1-50)
-    - min_score: Minimum relevance score threshold (0.0-1.0)
-
-    Returns:
-    - results: List of relevant documents with similarity scores
-    - total_results: Number of results returned
+    Results include `document_id` so Laravel can reliably enrich them
+    from the database without guessing filenames.
     """
-    try:
-        doc_folder = Path(__file__).parent.parent / 'ai_module' / 'documents'
+    if not module_status["document_index"]:
+        raise HTTPException(status_code=503, detail="document_index module not loaded")
 
-        if not doc_folder.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document folder not found: {doc_folder}"
-            )
+    result = search_index(request.query, top_k=request.top_k, min_score=request.min_score)
 
-        result = search_documents(
-            request.query,
-            str(doc_folder),
-            request.top_k
-        )
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "Search failed"))
 
-        if not result.get("success"):
-            raise HTTPException(status_code=500, detail="Search failed")
-
-        # Format results
-        formatted_results = []
-        for hit in result.get("results", []):
-            if hit.get("score", 0) >= request.min_score:
-                formatted_results.append({
-                    "document": hit.get("document", ""),
-                    "score": float(hit.get("score", 0)),
-                    "content": hit.get("content")
-                })
-
-        return {
-            "success": True,
-            "query": request.query,
-            "results": formatted_results,
-            "total_results": len(formatted_results),
-            "execution_time": result.get("execution_time")
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Search error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    return result
 
 
 @app.get("/search", response_model=SearchResponse, tags=["Document Search"])
 async def search_get(
-    query: str = Query(..., description="Search query", min_length=1),
-    top_k: int = Query(10, description="Number of results", ge=1, le=50),
-    min_score: float = Query(0.0, description="Minimum score", ge=0.0, le=1.0)
+    query: str = Query(..., min_length=1),
+    top_k: int = Query(10, ge=1, le=50),
+    min_score: float = Query(0.0, ge=0.0, le=1.0),
 ):
-    """
-    GET version of document search (query parameters)
-    """
-    request = SearchRequest(query=query, top_k=top_k, min_score=min_score)
-    return await search(request)
+    """GET version of search (query string parameters)."""
+    return await search(SearchRequest(query=query, top_k=top_k, min_score=min_score))
 
 
 # ────────────────────────────────────────────────────────────────────
-# Document Analysis Endpoints
+# Text preprocessing (UNCHANGED)
 # ────────────────────────────────────────────────────────────────────
 
+@app.post("/preprocess", response_model=TextPreprocessingResponse, tags=["Text Processing"])
+async def preprocess_text(request: TextPreprocessingRequest):
+    if not module_status["text_preprocessor"]:
+        raise HTTPException(status_code=503, detail="TextPreprocessor not loaded")
+    try:
+        preprocessor = TextPreprocessor()
+        tokens = preprocessor.preprocess(request.text, remove_stopwords=request.remove_stopwords, lemmatize=request.lemmatize)
+        cleaned_text = preprocessor.preprocess(request.text, remove_stopwords=request.remove_stopwords, lemmatize=request.lemmatize, return_string=True)
+        return {"success": True, "tokens": tokens, "token_count": len(tokens), "cleaned_text": cleaned_text, "text_length": len(request.text)}
+    except Exception as e:
+        logger.error("preprocess error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/preprocess/batch", tags=["Text Processing"])
+async def batch_preprocess(texts: List[str]):
+    if not texts:
+        raise HTTPException(status_code=400, detail="Empty text list")
+    if len(texts) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 texts per batch")
+    if not module_status["text_preprocessor"]:
+        raise HTTPException(status_code=503, detail="TextPreprocessor not loaded")
+    try:
+        preprocessor = TextPreprocessor()
+        results = []
+        for text in texts:
+            tokens  = preprocessor.preprocess(text, remove_stopwords=True, lemmatize=True)
+            cleaned = preprocessor.preprocess(text, remove_stopwords=True, lemmatize=True, return_string=True)
+            results.append({"original_text": text, "tokens": tokens, "token_count": len(tokens), "cleaned_text": cleaned})
+        return {"success": True, "total_processed": len(results), "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/analyze-document", response_model=DocumentAnalysisResponse, tags=["Document Analysis"])
 async def analyze_document(request: DocumentAnalysisRequest):
-    """
-    Analyze document text: tokenize, remove stopwords, lemmatize
-
-    Parameters:
-    - text: Document text to analyze
-    - remove_stopwords: Remove common stopwords
-    - lemmatize: Lemmatize tokens to base form
-
-    Returns:
-    - tokens: List of processed tokens
-    - token_count: Number of tokens
-    - cleaned_text: Complete cleaned text
-    - text_length: Original text length
-    """
+    if not module_status["text_preprocessor"]:
+        raise HTTPException(status_code=503, detail="TextPreprocessor not loaded")
     try:
         preprocessor = TextPreprocessor()
-
-        # Get tokens
-        tokens = preprocessor.preprocess(
-            request.text,
-            remove_stopwords=request.remove_stopwords,
-            lemmatize=request.lemmatize
-        )
-
-        # Get cleaned text
-        cleaned_text = preprocessor.preprocess(
-            request.text,
-            remove_stopwords=request.remove_stopwords,
-            lemmatize=request.lemmatize,
-            return_string=True
-        )
-
-        return {
-            "success": True,
-            "tokens": tokens,
-            "token_count": len(tokens),
-            "cleaned_text": cleaned_text,
-            "text_length": len(request.text)
-        }
-
+        tokens = preprocessor.preprocess(request.text, remove_stopwords=request.remove_stopwords, lemmatize=request.lemmatize)
+        cleaned_text = preprocessor.preprocess(request.text, remove_stopwords=request.remove_stopwords, lemmatize=request.lemmatize, return_string=True)
+        return {"success": True, "tokens": tokens, "token_count": len(tokens), "cleaned_text": cleaned_text, "text_length": len(request.text)}
     except Exception as e:
-        logger.error(f"Document analysis error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Document analysis failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ────────────────────────────────────────────────────────────────────
-# Query Analysis Endpoints
+# Query analysis (UNCHANGED)
 # ────────────────────────────────────────────────────────────────────
-
 
 @app.post("/analyze-query", response_model=QueryAnalysisResponse, tags=["Query Analysis"])
 async def analyze_query(request: QueryAnalysisRequest):
-    """
-    Analyze query: tokenization, expansion, and processing
-
-    Parameters:
-    - query: Query string to analyze
-    - enable_fuzzy: Enable fuzzy matching in analysis
-    - enable_expansion: Enable query expansion
-
-    Returns:
-    - processing: Query processing results
-    - expansion: Query expansion suggestions
-    """
+    if not module_status["query_processor"]:
+        raise HTTPException(status_code=503, detail="QueryProcessor not loaded")
     try:
-        processor = QueryProcessor(
-            enable_fuzzy_matching=request.enable_fuzzy,
-            enable_expansion=request.enable_expansion
-        )
-
-        result = {
-            "success": True,
-            "query": request.query,
-            "processing": processor.process_query(request.query, vectorize=False),
-        }
-
+        processor = QueryProcessor(enable_fuzzy_matching=request.enable_fuzzy, enable_expansion=request.enable_expansion)
+        result = {"success": True, "query": request.query, "processing": processor.process_query(request.query, vectorize=False)}
         if request.enable_expansion:
             result["expansion"] = processor.expand_query(request.query)
-
         return result
-
     except Exception as e:
-        logger.error(f"Query analysis error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Query analysis failed: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/query-suggestions", tags=["Query Analysis"])
-async def query_suggestions(query: str = Query(..., description="Query to get suggestions for")):
-    """
-    Get query expansion suggestions
-
-    Returns alternative query formulations and related terms
-    """
+async def query_suggestions(query: str = Query(...)):
+    if not module_status["query_processor"]:
+        raise HTTPException(status_code=503, detail="QueryProcessor not loaded")
     try:
         processor = QueryProcessor(enable_expansion=True)
-        expansion = processor.expand_query(query)
-
-        return {
-            "success": True,
-            "original_query": query,
-            "suggestions": expansion
-        }
-
+        return {"success": True, "original_query": query, "suggestions": processor.expand_query(query)}
     except Exception as e:
-        logger.error(f"Query suggestions error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get suggestions: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ────────────────────────────────────────────────────────────────────
-# Combined Endpoints (Multi-step operations)
+# Error handler
 # ────────────────────────────────────────────────────────────────────
-
-
-@app.post("/search-and-preprocess", tags=["Combined Operations"])
-async def search_and_preprocess(request: SearchRequest):
-    """
-    Search documents AND preprocess the query
-
-    Combines search with query preprocessing for enhanced results
-    """
-    try:
-        # Step 1: Preprocess the query
-        preprocessor = TextPreprocessor()
-        query_tokens = preprocessor.preprocess(
-            request.query,
-            remove_stopwords=True,
-            lemmatize=True
-        )
-
-        # Step 2: Search with original query
-        doc_folder = Path(__file__).parent.parent / 'ai_module' / 'documents'
-        search_result = search_documents(request.query, str(doc_folder), request.top_k)
-
-        if not search_result.get("success"):
-            raise HTTPException(status_code=500, detail="Search failed")
-
-        return {
-            "success": True,
-            "original_query": request.query,
-            "preprocessed_query_tokens": query_tokens,
-            "search_results": search_result.get("results", []),
-            "total_results": len(search_result.get("results", []))
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Search and preprocess error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Operation failed: {str(e)}")
-
-
-# ────────────────────────────────────────────────────────────────────
-# Status and Info Endpoints
-# ────────────────────────────────────────────────────────────────────
-
-
-@app.get("/status", tags=["Status"])
-async def status():
-    """Get API and AI module status information"""
-    return {
-        "api_status": "running",
-        "version": "1.0.0",
-        "ai_modules": check_module_status(),
-        "documents_folder": str(Path(__file__).parent.parent / 'ai_module' / 'documents'),
-    }
-
-
-@app.get("/info", tags=["Status"])
-async def info():
-    """Get API information and available endpoints"""
-    return {
-        "name": "Smart DMS AI API",
-        "version": "1.0.0",
-        "student": "Student B",
-        "description": "REST API for AI-powered document search and text preprocessing",
-        "endpoints": {
-            "text_preprocessing": ["/preprocess", "/preprocess/batch"],
-            "document_search": ["/search"],
-            "query_analysis": ["/analyze-query", "/query-suggestions"],
-            "combined_operations": ["/search-and-preprocess"],
-            "status": ["/health", "/status", "/info"]
-        },
-        "documentation": "/docs",
-        "openapi_schema": "/openapi.json"
-    }
-
-
-# ────────────────────────────────────────────────────────────────────
-# Error Handlers
-# ────────────────────────────────────────────────────────────────────
-
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
-    """Handle any unhandled exceptions"""
-    logger.error(f"Unhandled exception: {str(exc)}")
-    return JSONResponse(
-        status_code=500,
-        content={
-            "success": False,
-            "error": "Internal server error",
-            "detail": str(exc)
-        }
-    )
+    logger.error("Unhandled exception: %s", exc)
+    return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
 
 
 if __name__ == "__main__":

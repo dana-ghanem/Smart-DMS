@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -14,10 +15,6 @@ use Illuminate\Support\Facades\Storage;
 
 class DocumentController extends Controller
 {
-    /**
-     * Base URL of Student B's FastAPI server.
-     * Defined in .env as PYTHON_API_URL=http://localhost:8000
-     */
     private string $pythonApiUrl;
 
     public function __construct()
@@ -29,15 +26,6 @@ class DocumentController extends Controller
     //  PRIVATE — Python API Communication
     // =========================================================================
 
-    /**
-     * Send an HTTP POST request to Student B's FastAPI.
-     * All Python calls go through this single method.
-     *
-     * @param  string  $endpoint   e.g. '/preprocess' or '/search'
-     * @param  array   $payload    JSON body
-     * @param  int     $timeout    seconds before giving up
-     * @return array   decoded JSON response
-     */
     private function callPythonApi(string $endpoint, array $payload, int $timeout = 30): array
     {
         try {
@@ -74,19 +62,123 @@ class DocumentController extends Controller
     }
 
     // =========================================================================
-    //  REST API ENDPOINTS  (called by frontend JS / external clients)
+    //  PRIVATE — Index Helpers  (NEW)
     // =========================================================================
 
     /**
-     * POST /api/preprocess
-     * Preprocess raw text through the AI pipeline.
-     *
-     * Request body:
-     *   { "text": "...", "remove_stopwords": true, "lemmatize": true }
-     *
-     * Response:
-     *   { "success": true, "tokens": [...], "token_count": 12, "cleaned_text": "..." }
+     * Tell Python to index (or re-index) a document.
+     * Called after store() and update().
+     * Failures are logged but never shown to the user — upload still succeeds.
      */
+    private function indexDocumentInPython(Document $document): void
+    {
+        $category = $document->category?->name ?? '';
+        $searchableText = $this->buildSearchableText($document);
+
+        $result = $this->callPythonApi('/index-document', [
+            'document_id' => $document->document_id,
+            'title'       => $document->title       ?? '',
+            'author'      => $document->author_name ?? '',
+            'description' => $document->description ?? '',
+            'category'    => $category,
+            'text'        => $searchableText,
+        ], timeout: 10);
+
+        if (!($result['success'] ?? false)) {
+            Log::warning("Python indexing failed for document #{$document->document_id}: " . ($result['error'] ?? 'unknown'));
+        } else {
+            Log::info("Python indexed document #{$document->document_id} ({$document->title})");
+        }
+    }
+
+    /**
+     * Tell Python to remove a document from the index.
+     * Called after destroy().
+     */
+    private function removeDocumentFromPython(int $documentId): void
+    {
+        try {
+            Http::timeout(10)->delete("{$this->pythonApiUrl}/remove-document/{$documentId}");
+        } catch (\Exception $e) {
+            Log::warning("Python remove-document failed for #{$documentId}: " . $e->getMessage());
+        }
+    }
+
+    private function buildSearchableText(Document $document): string
+    {
+        $parts = array_filter([
+            $document->title,
+            $document->author_name,
+            $document->description,
+            $document->extracted_text,
+        ], fn ($value) => filled($value));
+
+        return trim(implode("\n\n", $parts));
+    }
+
+    private function extractDocumentText(string $filePath): array
+    {
+        return $this->callPythonApi('/extract-document', [
+            'file_path' => Storage::disk('public')->path($filePath),
+        ], timeout: 30);
+    }
+
+    private function duplicateDocumentForUser(int $userId, string $fileHash, ?int $ignoreDocumentId = null): ?Document
+    {
+        return Document::query()
+            ->where('user_id', $userId)
+            ->where('file_hash', $fileHash)
+            ->when($ignoreDocumentId, fn ($query) => $query->where('document_id', '!=', $ignoreDocumentId))
+            ->first();
+    }
+
+    private function syncDocumentContentAndIndex(Document $document): void
+    {
+        if ($document->file_path) {
+            $extraction = $this->extractDocumentText($document->file_path);
+
+            if ($extraction['success'] ?? false) {
+                $document->forceFill([
+                    'extracted_text' => $extraction['raw_text'] ?? null,
+                    'file_hash'      => $extraction['metadata']['sha256'] ?? $document->file_hash,
+                ])->save();
+            } else {
+                Log::warning("Document extraction failed for #{$document->document_id}: " . ($extraction['error'] ?? 'unknown'));
+            }
+        }
+
+        $this->indexDocumentInPython($document->fresh()->load('category'));
+    }
+
+    private function hashUploadedFile(UploadedFile $file): string
+    {
+        return hash_file('sha256', $file->getRealPath());
+    }
+
+    private function syncMissingDocumentContentForUser(int $userId): void
+    {
+        $documents = Document::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('file_path')
+            ->where('file_path', '!=', '')
+            ->where(function ($query) {
+                $query->whereNull('extracted_text')
+                    ->orWhere('extracted_text', '')
+                    ->orWhereNull('file_hash')
+                    ->orWhere('file_hash', '');
+            })
+            ->with('category')
+            ->get();
+
+        foreach ($documents as $document) {
+            $this->syncDocumentContentAndIndex($document);
+        }
+    }
+
+    // =========================================================================
+    //  REST API ENDPOINTS  (called by frontend JS / external clients)
+    // =========================================================================
+
     public function preprocessText(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -101,68 +193,40 @@ class DocumentController extends Controller
             'lemmatize'        => $validated['lemmatize']        ?? true,
         ]);
 
-        $statusCode = $result['success'] ? 200 : 500;
-        return response()->json($result, $statusCode);
+        return response()->json($result, $result['success'] ? 200 : 500);
     }
 
-    /**
-     * GET/POST /api/preprocess/document/{id}
-     * Preprocess a specific document's text (for frontend compatibility).
-     * This route accepts both GET and POST methods.
-     *
-     * GET: /api/preprocess/document/4
-     * POST: /api/preprocess/document/4 (with optional body parameters)
-     * Response: { "success": true, "tokens": [...], "token_count": 12, "cleaned_text": "..." }
-     */
     public function preprocessDocument(Request $request, int $id): JsonResponse
     {
         $document = Document::find($id);
 
         if (!$document) {
-            return response()->json([
-                'success' => false,
-                'error'   => 'Document not found.',
-            ], 404);
+            return response()->json(['success' => false, 'error' => 'Document not found.'], 404);
         }
-
-        // For API routes, we can't check auth easily, so we'll allow it
-        // In production, you might want to add API key authentication
 
         $text = $document->description ?? '';
 
         if (empty(trim($text))) {
             return response()->json([
-                'success' => false,
-                'error'   => 'Document "' . $document->title . '" has no description to preprocess. Please edit the document to add a description.',
+                'success'        => false,
+                'error'          => 'Document "' . $document->title . '" has no description to preprocess.',
                 'document_title' => $document->title,
-                'document_id' => $document->document_id,
+                'document_id'    => $document->document_id,
             ], 422);
         }
 
-        // Check if POST request has custom options
-        $removeStopwords = $request->input('remove_stopwords', true);
-        $lemmatize = $request->input('lemmatize', true);
-
         $result = $this->callPythonApi('/preprocess', [
             'text'             => $text,
-            'remove_stopwords' => $removeStopwords,
-            'lemmatize'        => $lemmatize,
+            'remove_stopwords' => $request->input('remove_stopwords', true),
+            'lemmatize'        => $request->input('lemmatize', true),
         ]);
 
-        $statusCode = $result['success'] ? 200 : 500;
-        return response()->json($result, $statusCode);
+        return response()->json($result, $result['success'] ? 200 : 500);
     }
 
     /**
      * POST /api/search
-     * AI-powered document search — sends query to Python,
-     * maps returned file names back to DB documents.
-     *
-     * Request body:
-     *   { "query": "machine learning", "top_k": 10, "min_score": 0.1 }
-     *
-     * Response:
-     *   { "success": true, "query": "...", "results": [...], "result_count": 5 }
+     * FIXED: enrichSearchResults now matches by document_id (not filename).
      */
     public function searchDocuments(Request $request): JsonResponse
     {
@@ -172,29 +236,22 @@ class DocumentController extends Controller
             'min_score' => 'numeric|min:0|max:1',
         ]);
 
+        $this->syncMissingDocumentContentForUser(Auth::id());
+
         $result = $this->callPythonApi('/search', [
             'query'     => $validated['query'],
             'top_k'     => $validated['top_k']     ?? 10,
             'min_score' => $validated['min_score'] ?? 0.0,
         ]);
 
-        // Enrich results with full document data from DB
+        // Enrich results with full DB record
         if ($result['success'] && !empty($result['results'])) {
             $result['results'] = $this->enrichSearchResults($result['results']);
         }
 
-        $statusCode = $result['success'] ? 200 : 500;
-        return response()->json($result, $statusCode);
+        return response()->json($result, $result['success'] ? 200 : 500);
     }
 
-    /**
-     * POST /api/analyze-document
-     * Run AI analysis on a specific document the user owns.
-     * Saves the processed tokens back to the DB.
-     *
-     * Request body:
-     *   { "document_id": 3 }
-     */
     public function analyzeDocument(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -222,7 +279,6 @@ class DocumentController extends Controller
             'lemmatize'        => true,
         ]);
 
-        // Persist tokens to DB if successful
         if ($result['success']) {
             $document->update([
                 'processed_tokens' => json_encode($result['tokens']),
@@ -233,57 +289,31 @@ class DocumentController extends Controller
         return response()->json($result, $result['success'] ? 200 : 500);
     }
 
-    /**
-     * POST /api/analyze-query
-     * Get detailed NLP analysis of a search query (expansion, suggestions).
-     *
-     * Request body:
-     *   { "query": "AI document search" }
-     */
     public function analyzeQuery(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'query' => 'required|string|max:500',
         ]);
 
-        $result = $this->callPythonApi('/analyze-query', [
-            'query' => $validated['query'],
-        ]);
-
+        $result = $this->callPythonApi('/analyze-query', ['query' => $validated['query']]);
         return response()->json($result, $result['success'] ? 200 : 500);
     }
 
-    /**
-     * GET /api/ai-health
-     * Check whether the Python FastAPI server is reachable.
-     * Used by the frontend to show/hide AI features gracefully.
-     */
-  public function checkAiHealth()
-{
-    $pythonUrl = env('PYTHON_API_URL', 'http://localhost:8000');
-    try {
-        $response = \Illuminate\Support\Facades\Http::get($pythonUrl . '/health');
-        return response()->json([
-            'laravel' => 'ok',
-            'python'  => $response->json()
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'laravel' => 'ok',
-            'python'  => 'unreachable',
-            'error'   => $e->getMessage()
-        ], 500);
+    public function checkAiHealth()
+    {
+        $pythonUrl = env('PYTHON_API_URL', 'http://localhost:8000');
+        try {
+            $response = \Illuminate\Support\Facades\Http::get($pythonUrl . '/health');
+            return response()->json(['laravel' => 'ok', 'python' => $response->json()]);
+        } catch (\Exception $e) {
+            return response()->json(['laravel' => 'ok', 'python' => 'unreachable', 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
     // =========================================================================
-    //  API ENDPOINTS - DOCUMENT CRUD (Public/Stateless)
+    //  API ENDPOINTS - DOCUMENT CRUD
     // =========================================================================
 
-    /**
-     * GET /api/documents
-     * List all documents (no authentication for API)
-     */
     public function apiIndex(): JsonResponse
     {
         $documents = Document::select('document_id', 'title', 'author_name', 'description', 'category_id', 'created_at')
@@ -291,17 +321,9 @@ class DocumentController extends Controller
             ->latest()
             ->get();
 
-        return response()->json([
-            'success' => true,
-            'count' => $documents->count(),
-            'documents' => $documents
-        ]);
+        return response()->json(['success' => true, 'count' => $documents->count(), 'documents' => $documents]);
     }
 
-    /**
-     * GET /api/documents/{id}
-     * Get a specific document
-     */
     public function apiShow(int $id): JsonResponse
     {
         $document = Document::with('category')
@@ -309,164 +331,158 @@ class DocumentController extends Controller
             ->find($id);
 
         if (!$document) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Document not found'
-            ], 404);
+            return response()->json(['success' => false, 'error' => 'Document not found'], 404);
         }
 
-        return response()->json([
-            'success' => true,
-            'document' => $document
-        ]);
+        return response()->json(['success' => true, 'document' => $document]);
     }
 
-    /**
-     * POST /api/documents
-     * Create a new document with metadata
-     *
-     * Request body:
-     *   {
-     *     "title": "Document Title",
-     *     "author_name": "Author Name",
-     *     "description": "Document description",
-     *     "category_id": 1,
-     *     "user_id": 3 (optional - defaults to first user)
-     *   }
-     */
     public function apiStore(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'title' => 'required|string|max:255',
+            'title'       => 'required|string|max:255',
             'author_name' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|integer|exists:categories,category_id',
-            'user_id' => 'nullable|integer|exists:users,user_id',
+            'user_id'     => 'nullable|integer|exists:users,user_id',
         ]);
 
-        // Default to first user if not specified
         $userId = $validated['user_id'] ?? User::query()->value('user_id');
 
         try {
             $document = Document::create([
-                'title' => $validated['title'],
+                'title'       => $validated['title'],
                 'author_name' => $validated['author_name'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'category_id' => $validated['category_id'] ?? null,
-                'user_id' => $userId,
-                'file_path' => null, // Will be set when file is uploaded
+                'user_id'     => $userId,
+                'file_path'   => null,
             ]);
 
+            // Index in Python (best-effort)
+            $this->indexDocumentInPython($document->load('category'));
+
             return response()->json([
-                'success' => true,
-                'message' => 'Document created successfully',
+                'success'     => true,
+                'message'     => 'Document created successfully',
                 'document_id' => $document->document_id,
-                'document' => $document
+                'document'    => $document,
             ], 201);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * POST /api/upload
-     * Upload a file and attach to a document
-     *
-     * Request (multipart/form-data):
-     *   - file: The file to upload
-     *   - document_id: ID of document to attach to (optional)
-     *   - title: Document title (if creating new)
-     *   - description: Document description
-     *   - category_id: Category ID
-     */
     public function apiUpload(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'file' => 'required|file|max:40960', // 40MB max
+            'file'        => 'required|file|max:40960',
             'document_id' => 'nullable|integer|exists:documents,document_id',
-            'title' => 'nullable|string|max:255',
+            'title'       => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|integer|exists:categories,category_id',
             'author_name' => 'nullable|string|max:255',
-            'user_id' => 'nullable|integer|exists:users,user_id',
+            'user_id'     => 'nullable|integer|exists:users,user_id',
         ]);
 
         try {
-            $file = $request->file('file');
+            $file     = $request->file('file');
+            $fileHash = $this->hashUploadedFile($file);
+            $userId   = $validated['user_id'] ?? User::query()->value('user_id');
+
             $filePath = $file->store('documents', 'public');
 
-            // If document_id provided, update existing
             if ($validated['document_id'] ?? null) {
                 $document = Document::find($validated['document_id']);
                 if (!$document) {
+                    return response()->json(['success' => false, 'error' => 'Document not found'], 404);
+                }
+                if ($this->duplicateDocumentForUser($document->user_id, $fileHash, $document->document_id)) {
+                    Storage::disk('public')->delete($filePath);
+
                     return response()->json([
                         'success' => false,
-                        'error' => 'Document not found'
-                    ], 404);
+                        'error'   => 'This document already exists and was not uploaded again.',
+                    ], 409);
                 }
 
-                $document->update(['file_path' => $filePath]);
+                $document->update([
+                    'file_path' => $filePath,
+                    'file_hash' => $fileHash,
+                ]);
+                $this->syncDocumentContentAndIndex($document->load('category'));
 
                 return response()->json([
-                    'success' => true,
-                    'message' => 'File uploaded and attached to document',
+                    'success'     => true,
+                    'message'     => 'File uploaded and attached to document',
                     'document_id' => $document->document_id,
-                    'file_path' => $filePath
-                ], 200);
+                    'file_path'   => $filePath,
+                ]);
             }
 
-            // Create new document with file
-            $userId = $validated['user_id'] ?? User::query()->value('user_id');
-            $title = $validated['title'] ?? $file->getClientOriginalName();
+            if ($this->duplicateDocumentForUser($userId, $fileHash)) {
+                Storage::disk('public')->delete($filePath);
 
+                return response()->json([
+                    'success' => false,
+                    'error'   => 'This document already exists and was not uploaded again.',
+                ], 409);
+            }
+
+            $title    = $validated['title']   ?? $file->getClientOriginalName();
             $document = Document::create([
-                'title' => $title,
+                'title'       => $title,
                 'author_name' => $validated['author_name'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'category_id' => $validated['category_id'] ?? null,
-                'file_path' => $filePath,
-                'user_id' => $userId,
+                'file_path'   => $filePath,
+                'file_hash'   => $fileHash,
+                'user_id'     => $userId,
             ]);
 
+            $this->syncDocumentContentAndIndex($document->load('category'));
+
             return response()->json([
-                'success' => true,
-                'message' => 'File uploaded and document created',
+                'success'     => true,
+                'message'     => 'File uploaded and document created',
                 'document_id' => $document->document_id,
-                'file_path' => $filePath,
-                'document' => $document
+                'file_path'   => $filePath,
+                'document'    => $document,
             ], 201);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
 
     // =========================================================================
+    //  FIXED: enrichSearchResults — matches by document_id, not filename
+    // =========================================================================
+
     /**
-     * Match AI search results (file names) to full Document records in DB.
-     * Returns results enriched with title, author, category, description.
+     * Python now returns document_id in every result, so we look up by PK.
+     * We still restrict results to the current user's documents.
      */
     private function enrichSearchResults(array $results): array
     {
         return array_map(function (array $result) {
-            // Try to find document in DB by matching file name in file_path
-            $document = Document::where('file_path', 'like', '%' . $result['document'] . '%')
-                ->where('user_id', Auth::id())
-                ->first();
+            $documentId = $result['document_id'] ?? null;
 
-            if ($document) {
-                $result['document_id']  = $document->document_id;
-                $result['title']        = $document->title;
-                $result['author']       = $document->author_name;
-                $result['description']  = $document->description;
-                $result['category']     = $document->category?->name;
-                $result['file_path']    = $document->file_path;
+            if ($documentId) {
+                $document = Document::where('document_id', $documentId)
+                    ->where('user_id', Auth::id())
+                    ->with('category')
+                    ->first();
+
+                if ($document) {
+                    $result['document_id'] = $document->document_id;
+                    $result['title']       = $document->title;
+                    $result['author']      = $document->author_name;
+                    $result['description'] = $document->description;
+                    $result['category']    = $document->category?->name;
+                    $result['file_path']   = $document->file_path;
+                    $result['content']     = $document->extracted_text ?: ($result['content'] ?? null);
+                }
             }
 
             return $result;
@@ -484,7 +500,7 @@ class DocumentController extends Controller
     }
 
     // =========================================================================
-    //  DOCUMENT CRUD
+    //  DOCUMENT CRUD (web, session-auth)
     // =========================================================================
 
     public function index(): \Illuminate\View\View
@@ -506,6 +522,9 @@ class DocumentController extends Controller
         return view('documents.show', compact('document'));
     }
 
+    /**
+     * UPDATED: calls indexDocumentInPython() after saving.
+     */
     public function store(Request $request): \Illuminate\Http\RedirectResponse
     {
         $validated = $request->validate([
@@ -517,15 +536,27 @@ class DocumentController extends Controller
         ]);
 
         $category = Category::firstOrCreate(['name' => $validated['category']]);
-        $path     = $request->file('file')->store('documents', 'public');
+        $file     = $request->file('file');
+        $fileHash = $this->hashUploadedFile($file);
 
-        Auth::user()->documents()->create([
+        if ($this->duplicateDocumentForUser(Auth::id(), $fileHash)) {
+            return back()->withErrors([
+                'file' => 'This document already exists and was not uploaded again.',
+            ])->withInput();
+        }
+
+        $path = $file->store('documents', 'public');
+
+        $document = Auth::user()->documents()->create([
             'title'       => $validated['title'],
             'author_name' => $validated['author_name'] ?? null,
             'description' => $validated['description'] ?? null,
             'category_id' => $category->category_id,
             'file_path'   => $path,
+            'file_hash'   => $fileHash,
         ]);
+
+        $this->syncDocumentContentAndIndex($document->load('category'));
 
         return redirect()->route('documents.index')
                          ->with('success', 'Document uploaded successfully.');
@@ -540,6 +571,9 @@ class DocumentController extends Controller
         return view('documents.edit', compact('document', 'categories'));
     }
 
+    /**
+     * UPDATED: re-indexes after metadata/file change.
+     */
     public function update(Request $request, Document $document): \Illuminate\Http\RedirectResponse
     {
         if ($document->user_id !== Auth::id()) {
@@ -558,8 +592,19 @@ class DocumentController extends Controller
 
         $filePath = $document->file_path;
         if ($request->hasFile('file')) {
+            $newFile = $request->file('file');
+            $fileHash = $this->hashUploadedFile($newFile);
+
+            if ($this->duplicateDocumentForUser(Auth::id(), $fileHash, $document->document_id)) {
+                return back()->withErrors([
+                    'file' => 'This document already exists and was not uploaded again.',
+                ])->withInput();
+            }
+
             Storage::disk('public')->delete($document->file_path);
-            $filePath = $request->file('file')->store('documents', 'public');
+            $filePath = $newFile->store('documents', 'public');
+        } else {
+            $fileHash = $document->file_hash;
         }
 
         $document->update([
@@ -568,20 +613,31 @@ class DocumentController extends Controller
             'description' => $validated['description'] ?? null,
             'category_id' => $category->category_id,
             'file_path'   => $filePath,
+            'file_hash'   => $fileHash,
         ]);
+
+        $this->syncDocumentContentAndIndex($document->fresh()->load('category'));
 
         return redirect()->route('documents.index')
                          ->with('success', 'Document updated successfully.');
     }
 
+    /**
+     * UPDATED: removes from Python index on delete.
+     */
     public function destroy(Document $document): \Illuminate\Http\RedirectResponse
     {
         if ($document->user_id !== Auth::id()) {
             abort(403);
         }
 
+        $documentId = $document->document_id;
+
         Storage::disk('public')->delete($document->file_path);
         $document->delete();
+
+        // ← NEW: remove from Python index
+        $this->removeDocumentFromPython($documentId);
 
         return redirect()->route('documents.index')
                          ->with('success', 'Document deleted successfully.');

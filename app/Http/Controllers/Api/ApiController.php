@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -29,6 +30,102 @@ class ApiController extends Controller
     public function __construct()
     {
         $this->pythonApiUrl = env('PYTHON_API_URL', 'http://localhost:8000');
+    }
+
+    private function extractDocumentText(string $filePath): array
+    {
+        return $this->callPython('/extract-document', [
+            'file_path' => Storage::disk('public')->path($filePath),
+        ], 30);
+    }
+
+    private function buildSearchableText(Document $document): string
+    {
+        $parts = array_filter([
+            $document->title,
+            $document->author_name,
+            $document->description,
+            $document->extracted_text,
+        ], fn ($value) => filled($value));
+
+        return trim(implode("\n\n", $parts));
+    }
+
+    private function hashUploadedFile(UploadedFile $file): string
+    {
+        return hash_file('sha256', $file->getRealPath());
+    }
+
+    private function duplicateDocumentForUser(int $userId, string $fileHash, ?int $ignoreDocumentId = null): ?Document
+    {
+        return Document::query()
+            ->where('user_id', $userId)
+            ->where('file_hash', $fileHash)
+            ->when($ignoreDocumentId, fn ($query) => $query->where('document_id', '!=', $ignoreDocumentId))
+            ->first();
+    }
+
+    private function indexDocumentInPython(Document $document): void
+    {
+        $result = $this->callPython('/index-document', [
+            'document_id' => $document->document_id,
+            'title'       => $document->title ?? '',
+            'author'      => $document->author_name ?? '',
+            'description' => $document->description ?? '',
+            'category'    => $document->category?->name ?? '',
+            'text'        => $this->buildSearchableText($document),
+        ], 15);
+
+        if (! ($result['success'] ?? false)) {
+            Log::warning("Python indexing failed for document #{$document->document_id}: " . ($result['error'] ?? 'unknown'));
+        }
+    }
+
+    private function removeDocumentFromPython(int $documentId): void
+    {
+        try {
+            Http::timeout(10)->delete("{$this->pythonApiUrl}/remove-document/{$documentId}");
+        } catch (\Exception $e) {
+            Log::warning("Python remove-document failed for #{$documentId}: " . $e->getMessage());
+        }
+    }
+
+    private function syncDocumentContentAndIndex(Document $document): void
+    {
+        if ($document->file_path) {
+            $extraction = $this->extractDocumentText($document->file_path);
+
+            if ($extraction['success'] ?? false) {
+                $document->forceFill([
+                    'extracted_text' => $extraction['raw_text'] ?? null,
+                    'file_hash'      => $extraction['metadata']['sha256'] ?? $document->file_hash,
+                ])->save();
+            } else {
+                Log::warning("Document extraction failed for #{$document->document_id}: " . ($extraction['error'] ?? 'unknown'));
+            }
+        }
+
+        $this->indexDocumentInPython($document->fresh('category'));
+    }
+
+    private function syncMissingDocumentContentForUser(int $userId): void
+    {
+        $documents = Document::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('file_path')
+            ->where('file_path', '!=', '')
+            ->where(function ($query) {
+                $query->whereNull('extracted_text')
+                    ->orWhere('extracted_text', '')
+                    ->orWhereNull('file_hash')
+                    ->orWhere('file_hash', '');
+            })
+            ->with('category')
+            ->get();
+
+        foreach ($documents as $document) {
+            $this->syncDocumentContentAndIndex($document);
+        }
     }
 
     // =========================================================================
@@ -175,6 +272,8 @@ class ApiController extends Controller
             'file_path'   => '',
         ]);
 
+        $this->indexDocumentInPython($document->load('category'));
+
         return response()->json([
             'success' => true,
             'message' => 'Document created.',
@@ -199,8 +298,18 @@ class ApiController extends Controller
         ]);
 
         $categoryId = $this->resolveCategoryId($validated, createDefault: true);
+        $file = $request->file('file');
+        $fileHash = $this->hashUploadedFile($file);
+        $userId = (int) $request->user()->getKey();
 
-        $path = $request->file('file')->store('documents', 'public');
+        if ($this->duplicateDocumentForUser($userId, $fileHash)) {
+            return response()->json([
+                'success' => false,
+                'error'   => 'This document already exists and was not uploaded again.',
+            ], 409);
+        }
+
+        $path = $file->store('documents', 'public');
 
         $document = $request->user()->documents()->create([
             'title'       => $validated['title'],
@@ -208,7 +317,10 @@ class ApiController extends Controller
             'description' => $validated['description'] ?? null,
             'category_id' => $categoryId,
             'file_path'   => $path,
+            'file_hash'   => $fileHash,
         ]);
+
+        $this->syncDocumentContentAndIndex($document->load('category'));
 
         return response()->json([
             'success'  => true,
@@ -249,6 +361,7 @@ class ApiController extends Controller
         }
 
         $document->update($validated);
+        $this->indexDocumentInPython($document->fresh('category'));
 
         return response()->json([
             'success' => true,
@@ -272,6 +385,7 @@ class ApiController extends Controller
             Storage::disk('public')->delete($document->file_path);
         }
 
+        $this->removeDocumentFromPython($document->document_id);
         $document->delete();
 
         return response()->json(['success' => true, 'message' => 'Document deleted.']);
@@ -353,6 +467,8 @@ class ApiController extends Controller
             'top_k'     => 'integer|min:1|max:50',
             'min_score' => 'numeric|min:0|max:1',
         ]);
+
+        $this->syncMissingDocumentContentForUser((int) $request->user()->getKey());
 
         $result = $this->callPython('/search', [
             'query'     => $validated['query'],
@@ -477,9 +593,13 @@ class ApiController extends Controller
     private function enrichResults(array $results, $user): array
     {
         return array_map(function ($result) use ($user) {
-            $document = Document::where('file_path', 'like', '%' . $result['document'] . '%')
-                ->where('user_id', $user->getKey())
-                ->first();
+            $documentId = $result['document_id'] ?? null;
+
+            $document = $documentId
+                ? Document::where('document_id', $documentId)->where('user_id', $user->getKey())->first()
+                : Document::where('file_path', 'like', '%' . $result['document'] . '%')
+                    ->where('user_id', $user->getKey())
+                    ->first();
 
             if ($document) {
                 $result['document_id'] = $document->document_id;
@@ -487,6 +607,7 @@ class ApiController extends Controller
                 $result['author']      = $document->author_name;
                 $result['description'] = $document->description;
                 $result['category']    = $document->category?->name;
+                $result['content']     = $document->extracted_text ?: ($result['content'] ?? null);
             }
 
             return $result;
@@ -500,6 +621,7 @@ class ApiController extends Controller
             'title'        => $document->title,
             'author_name'  => $document->author_name,
             'description'  => $document->description,
+            'extracted_text' => $document->extracted_text,
             'category'     => $document->category?->name,
             'file_path'    => filled($document->file_path)
                 ? asset('storage/' . $document->file_path)
