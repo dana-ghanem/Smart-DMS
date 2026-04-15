@@ -1,5 +1,6 @@
 import './bootstrap';
 import TextPreprocessor from './text-preprocessor';
+import './documents';
 
 // ── 1. Register AI Preprocessor Globally ──
 window.TextPreprocessor = TextPreprocessor;

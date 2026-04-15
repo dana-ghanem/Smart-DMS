@@ -1,18 +1,10 @@
-/**
- * Text Preprocessing API Helper
- * Adapted to match existing Laravel Route: api/preprocess/document/{id}
- */
 export default class TextPreprocessor {
     constructor() {
-        this.apiBaseUrl = '/api';
+        this.apiBaseUrl = '/ui-api';
         this.csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     }
 
-    /**
-     * Maps the nested AI response to a flat format for your UI
-     */
     mapResponse(data) {
-        // If the backend returns data inside 'processing' (as seen in your Postman)
         if (data.success && data.processing) {
             const proc = data.processing;
             return {
@@ -24,17 +16,59 @@ export default class TextPreprocessor {
             };
         }
 
-        // Pass through error information
+        if (data.success && data.tokens) {
+            return {
+                success: true,
+                tokens: data.tokens || [],
+                token_count: data.token_count || 0,
+                cleaned_text: data.cleaned_text || "",
+                text_length: data.text_length || 0
+            };
+        }
+
         if (!data.success) {
             return {
                 success: false,
-                error: data.error || 'Unknown error',
+                error: this.extractError(data),
                 document_id: data.document_id,
                 document_title: data.document_title
             };
         }
 
         return data;
+    }
+
+    extractError(data) {
+        if (!data) {
+            return 'Unknown error';
+        }
+
+        if (typeof data === 'string') {
+            return data;
+        }
+
+        if (data.error) {
+            return data.error;
+        }
+
+        if (data.detail) {
+            return data.detail;
+        }
+
+        if (data.message) {
+            return data.message;
+        }
+
+        if (data.errors) {
+            if (typeof data.errors === 'string') {
+                return data.errors;
+            }
+            if (typeof data.errors === 'object') {
+                return Object.values(data.errors).flat().join(' ');
+            }
+        }
+
+        return 'Unknown error';
     }
 
     async preprocessText(text, options = {}) {
@@ -46,6 +80,7 @@ export default class TextPreprocessor {
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': this.csrfToken
                 },
+                credentials: 'include',
                 body: JSON.stringify({
                     text: text,
                     remove_stopwords: options.removeStopwords ?? true,
@@ -54,30 +89,31 @@ export default class TextPreprocessor {
             });
 
             const data = await response.json();
+            if (!response.ok) {
+                return { success: false, error: this.extractError(data) };
+            }
             return this.mapResponse(data);
         } catch (error) {
             return { success: false, error: error.message };
         }
     }
 
-    /**
-     * Matches route: api/preprocess/document/{id}
-     */
     async analyzeDocument(documentId) {
         try {
-            // Changed to GET and updated URL structure to match your error message
             const response = await fetch(`${this.apiBaseUrl}/preprocess/document/${documentId}`, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
-                    'X-CSRF-TOKEN': this.csrfToken
-                }
+                    'X-CSRF-TOKEN': this.csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'include'
             });
 
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || `Route not found: ${response.status}`);
+                return { success: false, error: this.extractError(data) };
             }
 
             return this.mapResponse(data);
@@ -87,3 +123,6 @@ export default class TextPreprocessor {
         }
     }
 }
+
+// Make available globally for blade scripts
+window.TextPreprocessor = TextPreprocessor;

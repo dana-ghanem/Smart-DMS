@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Edit Document — SMART-DMS</title>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheets">
-    <link rel="stylesheets" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
@@ -77,7 +79,7 @@
                     <input type="file" name="file" id="fileInput" accept=".pdf,.doc,.docx,.txt">
                     <div class="file-drop-icon"><i class="fas fa-cloud-upload-alt"></i></div>
                     <p><span>Click to browse</span> or drag & drop to replace</p>
-                    <p style="font-size:0.75rem; margin-top:4px;">PDF, DOC, DOCX, TXT — max 2MB</p>
+                    <p style="font-size:0.75rem; margin-top:4px;">PDF, DOC, DOCX, TXT — max 40MB</p>
                     <p class="file-name" id="fileName"></p>
                 </div>
             </div>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Document;
 use App\Models\Category;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -276,9 +277,177 @@ class DocumentController extends Controller
 }
 
     // =========================================================================
-    //  PRIVATE HELPERS
+    //  API ENDPOINTS - DOCUMENT CRUD (Public/Stateless)
     // =========================================================================
 
+    /**
+     * GET /api/documents
+     * List all documents (no authentication for API)
+     */
+    public function apiIndex(): JsonResponse
+    {
+        $documents = Document::select('document_id', 'title', 'author_name', 'description', 'category_id', 'created_at')
+            ->with('category:category_id,name')
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'count' => $documents->count(),
+            'documents' => $documents
+        ]);
+    }
+
+    /**
+     * GET /api/documents/{id}
+     * Get a specific document
+     */
+    public function apiShow(int $id): JsonResponse
+    {
+        $document = Document::with('category')
+            ->select('document_id', 'title', 'author_name', 'description', 'category_id', 'file_path', 'created_at')
+            ->find($id);
+
+        if (!$document) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Document not found'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'document' => $document
+        ]);
+    }
+
+    /**
+     * POST /api/documents
+     * Create a new document with metadata
+     *
+     * Request body:
+     *   {
+     *     "title": "Document Title",
+     *     "author_name": "Author Name",
+     *     "description": "Document description",
+     *     "category_id": 1,
+     *     "user_id": 3 (optional - defaults to first user)
+     *   }
+     */
+    public function apiStore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'author_name' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+            'category_id' => 'nullable|integer|exists:categories,category_id',
+            'user_id' => 'nullable|integer|exists:users,user_id',
+        ]);
+
+        // Default to first user if not specified
+        $userId = $validated['user_id'] ?? User::query()->value('user_id');
+
+        try {
+            $document = Document::create([
+                'title' => $validated['title'],
+                'author_name' => $validated['author_name'] ?? null,
+                'description' => $validated['description'] ?? null,
+                'category_id' => $validated['category_id'] ?? null,
+                'user_id' => $userId,
+                'file_path' => null, // Will be set when file is uploaded
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Document created successfully',
+                'document_id' => $document->document_id,
+                'document' => $document
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/upload
+     * Upload a file and attach to a document
+     *
+     * Request (multipart/form-data):
+     *   - file: The file to upload
+     *   - document_id: ID of document to attach to (optional)
+     *   - title: Document title (if creating new)
+     *   - description: Document description
+     *   - category_id: Category ID
+     */
+    public function apiUpload(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'file' => 'required|file|max:40960', // 40MB max
+            'document_id' => 'nullable|integer|exists:documents,document_id',
+            'title' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+            'category_id' => 'nullable|integer|exists:categories,category_id',
+            'author_name' => 'nullable|string|max:255',
+            'user_id' => 'nullable|integer|exists:users,user_id',
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $filePath = $file->store('documents', 'public');
+
+            // If document_id provided, update existing
+            if ($validated['document_id'] ?? null) {
+                $document = Document::find($validated['document_id']);
+                if (!$document) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Document not found'
+                    ], 404);
+                }
+
+                $document->update(['file_path' => $filePath]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'File uploaded and attached to document',
+                    'document_id' => $document->document_id,
+                    'file_path' => $filePath
+                ], 200);
+            }
+
+            // Create new document with file
+            $userId = $validated['user_id'] ?? User::query()->value('user_id');
+            $title = $validated['title'] ?? $file->getClientOriginalName();
+
+            $document = Document::create([
+                'title' => $title,
+                'author_name' => $validated['author_name'] ?? null,
+                'description' => $validated['description'] ?? null,
+                'category_id' => $validated['category_id'] ?? null,
+                'file_path' => $filePath,
+                'user_id' => $userId,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'File uploaded and document created',
+                'document_id' => $document->document_id,
+                'file_path' => $filePath,
+                'document' => $document
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // =========================================================================
     /**
      * Match AI search results (file names) to full Document records in DB.
      * Returns results enriched with title, author, category, description.
@@ -344,7 +513,7 @@ class DocumentController extends Controller
             'author_name' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'category'    => 'required|string|max:255',
-            'file'        => 'required|file|mimes:pdf,doc,docx,txt|max:2048',
+            'file'        => 'required|file|mimes:pdf,doc,docx,txt|max:40960',
         ]);
 
         $category = Category::firstOrCreate(['name' => $validated['category']]);
@@ -382,7 +551,7 @@ class DocumentController extends Controller
             'author_name' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'category'    => 'required|string|max:255',
-            'file'        => 'nullable|file|mimes:pdf,doc,docx,txt|max:2048',
+            'file'        => 'nullable|file|mimes:pdf,doc,docx,txt|max:40960',
         ]);
 
         $category = Category::firstOrCreate(['name' => $validated['category']]);

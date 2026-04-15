@@ -1,32 +1,32 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\Api\ApiController;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-|
-| These routes are automatically prefixed with /api
-| Middleware: api (stateless, no session/CSRF)
-|
-*/
+Route::prefix('auth')->group(function () {
+    Route::post('/register', [ApiController::class, 'register']);
+    Route::post('/login',    [ApiController::class, 'login']);
+});
 
-// Health check
-Route::get('/ai-health', [DocumentController::class, 'checkAiHealth']);
+Route::get('/ai-health', [ApiController::class, 'aiHealth']);
 
-// Text preprocessing
-Route::post('/preprocess', [DocumentController::class, 'preprocessText']);
+// ── Public preprocess routes (called by browser session)
+Route::get('/preprocess/document/{id}',  [ApiController::class, 'preprocessDocument']);
+Route::post('/preprocess/document/{id}', [ApiController::class, 'preprocessDocument']);
 
-// Document preprocessing (GET and POST for frontend compatibility)
-Route::match(['GET', 'POST'], '/preprocess/document/{id}', [DocumentController::class, 'preprocessDocument']);
+// ── Protected — Bearer token required (Postman)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/auth/logout', [ApiController::class, 'logout']);
 
-// Document search
-Route::post('/search', [DocumentController::class, 'searchDocuments']);
+    Route::get('/documents',       [ApiController::class, 'listDocuments']);
+    Route::get('/documents/{id}',  [ApiController::class, 'getDocument'])->whereNumber('id');
+    Route::post('/documents',      [ApiController::class, 'createDocument']);
+    Route::put('/documents/{id}',  [ApiController::class, 'updateDocument'])->whereNumber('id');
+    Route::delete('/documents/{id}', [ApiController::class, 'deleteDocument'])->whereNumber('id');
 
-// Document analysis
-Route::post('/analyze-document', [DocumentController::class, 'analyzeDocument']);
-
-// Query analysis
-Route::post('/analyze-query', [DocumentController::class, 'analyzeQuery']);
+    Route::post('/upload',                [ApiController::class, 'uploadDocument']);
+    Route::post('/preprocess',            [ApiController::class, 'preprocessText']);
+    Route::post('/search',                [ApiController::class, 'searchDocuments']);
+    Route::post('/analyze-document',      [ApiController::class, 'analyzeDocument']);
+    Route::post('/analyze-query',         [ApiController::class, 'analyzeQuery']);
+});

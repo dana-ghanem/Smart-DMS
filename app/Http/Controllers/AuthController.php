@@ -15,7 +15,7 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
-    // Handle login request
+    // WEB LOGIN (SESSION ONLY)
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -29,17 +29,17 @@ class AuthController extends Controller
         }
 
         return back()->withErrors([
-            'email' => 'The provided credentials do not match our records.',
-        ])->onlyInput('email');
+            'email' => 'Invalid credentials',
+        ]);
     }
 
-    // Show registration form
+    // Show register form
     public function showRegisterForm()
     {
         return view('auth.register');
     }
 
-    // Handle registration request
+    // WEB REGISTER (SESSION ONLY)
     public function register(Request $request)
     {
         $validated = $request->validate([
@@ -55,15 +55,17 @@ class AuthController extends Controller
         ]);
 
         Auth::login($user);
+
         return redirect()->route('documents.index');
     }
 
-    // Handle logout
+    // LOGOUT (WEB)
     public function logout(Request $request)
     {
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
         return redirect('/');
     }
 }
